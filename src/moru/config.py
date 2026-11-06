@@ -17,7 +17,7 @@ CACHE_DIR = ROOT / "cache"
 QDRANT_DIR = ROOT / "qdrant_storage"
 RESULTS_DIR = ROOT / "results"
 
-GEMINI_MODEL = "gemini-3.8-flash"
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 KURE_MODEL = "nlpai-lab/KURE-v2"
 BGE_MODEL = "BAAI/bge-m3"
 KURE_DIM = 128
@@ -48,9 +48,10 @@ def video_dir() -> Path:
     return path
 
 
-# 무료 등급 호출 설정. 429 응답으로 확인한 일일 한도는 20회다(2026-11-07).
+# 무료 등급 호출 설정. 3.6 Flash의 일일 한도는 아직 모른다. GEMINI_RPD는 코드 쪽 안전장치이고,
+# 실제 한도에 닿으면 429 응답으로 멈춘다. 한도를 알게 되면 .env에 적는다.
 GEMINI_RPM = float(os.environ.get("GEMINI_RPM", "5"))
-GEMINI_RPD = int(os.environ.get("GEMINI_RPD", "20"))
+GEMINI_RPD = int(os.environ.get("GEMINI_RPD", "1000"))
 THINKING_LEVEL = "low"  # 3.8 Flash는 low, medium, high만 받는다
 LLM_CACHE_DIR = CACHE_DIR / "llm"
 LLM_LOG = CACHE_DIR / "llm_calls.jsonl"

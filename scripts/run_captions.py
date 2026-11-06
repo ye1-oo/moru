@@ -26,7 +26,7 @@ def main() -> None:
         videos = videos.head(args.limit)
     items = caption.load_item_pool()
 
-    out = config.RESULTS_DIR / "raw" / f"captions_{args.mode}.jsonl"
+    out = config.RESULTS_DIR / "raw" / f"captions_{config.GEMINI_MODEL}_{args.mode}.jsonl"
     out.parent.mkdir(parents=True, exist_ok=True)
     done = {}
     if out.exists():
@@ -41,7 +41,8 @@ def main() -> None:
                 continue
             text = caption.caption_video(row, args.mode, items)
             done[row["video_id"]] = {
-                "video_id": row["video_id"], "domain": row["domain"], "mode": args.mode, "caption": text,
+                "video_id": row["video_id"], "domain": row["domain"], "mode": args.mode,
+                "model": config.GEMINI_MODEL, "caption": text,
             }
             with out.open("a", encoding="utf-8") as file:
                 file.write(json.dumps(done[row["video_id"]], ensure_ascii=False) + "\n")
