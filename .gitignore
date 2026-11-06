@@ -179,3 +179,36 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# ---------------------------------------------------------------
+# MORU: 저장소에 절대 올리면 안 되는 것 (CLAUDE.md 2장)
+# ---------------------------------------------------------------
+
+# macOS
+.DS_Store
+
+# 영상: 저작권·아동 초상 문제로 커밋 금지. 원본은 저장소 밖 VIDEO_DIR에 둔다.
+data/videos/
+*.mp4
+*.mov
+*.m4v
+*.avi
+*.mkv
+*.webm
+
+# K-DST 실제 문항: 복제 금지 문구가 있으므로 가짜 예시(example.json)만 커밋
+data/kdst/*.json
+!data/kdst/example.json
+data/kdst_pdf/
+
+# 캐시와 로컬 벡터 DB: LLM 프롬프트·응답에 문항 원문이 들어 있다
+cache/
+qdrant_storage/
+
+# 문항 원문이 그대로 담기는 원본 산출물 (커밋은 마스킹본만)
+results/raw/
+results/contexts/
+
+# 실행 로그와 내려받은 모델
+logs/
+models/
