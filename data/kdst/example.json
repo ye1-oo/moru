@@ -1,0 +1,5 @@
+[
+  {"item_id": "example_gm_01", "age_band": "example", "domain": "gross_motor", "text": "[가짜 예시 문항] 아이가 대근육 행동 A를 한다."},
+  {"item_id": "example_lg_01", "age_band": "example", "domain": "language", "text": "[가짜 예시 문항] 아이가 언어 행동 B를 한다."},
+  {"item_id": "example_sc_01", "age_band": "example", "domain": "self_care", "text": "[가짜 예시 문항] 아이가 자조 행동 C를 한다."}
+]

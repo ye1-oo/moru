@@ -1,0 +1,29 @@
+[project]
+name = "moru"
+version = "0.1.0"
+description = "육아기록 기반 AI 영유아 발달 관찰 시스템의 핵심 AI 파이프라인"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "google-genai>=3.0",
+    "pydantic>=2.14,<3",
+    "python-dotenv>=1.0",
+    "pylate>=1.6",
+    "qdrant-client==1.20.0",
+    "pandas>=2.2",
+    "scikit-learn>=1.5",
+    "matplotlib>=3.9",
+    "pytest>=8",
+    "pymupdf>=1.24",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
