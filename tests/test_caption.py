@@ -1,4 +1,4 @@
-from moru.caption import build_prompt, load_videos
+from moru.caption import build_prompt, first_per_domain, load_videos
 from moru.config import LABELS_CSV
 from moru.schemas import KdstItem
 
@@ -27,3 +27,10 @@ def test_duplicate_video_is_excluded():
     videos = load_videos()
     assert len(videos) == 98
     assert "self_care_15" not in set(videos["video_id"])
+
+
+@pytest.mark.skipif(not LABELS_CSV.exists(), reason="로컬 labels.csv 필요")
+def test_first_per_domain_picks_five_each():
+    picked = first_per_domain(load_videos(), 5)
+    assert len(picked) == 30
+    assert set(picked["domain"].value_counts()) == {5}

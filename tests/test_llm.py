@@ -96,3 +96,13 @@ def test_busy_server_gives_up_after_two_retries(monkeypatch, tmp_path):
         assert len(attempts) == 3
         return
     raise AssertionError("과부하 오류여야 합니다")
+
+
+def test_blocked_content_is_never_retried(monkeypatch, tmp_path):
+    attempts = fail_with(monkeypatch, tmp_path, Failure(400, "code: prohibited_content"))
+    try:
+        llm.generate("q")
+    except llm.ContentBlocked:
+        assert len(attempts) == 1
+        return
+    raise AssertionError("차단 오류여야 합니다")

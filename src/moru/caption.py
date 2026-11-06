@@ -61,6 +61,11 @@ def load_videos() -> pd.DataFrame:
     return table[table["duplicate_of"] == ""].reset_index(drop=True)
 
 
+def first_per_domain(videos: pd.DataFrame, count: int) -> pd.DataFrame:
+    """영역별 앞쪽 영상을 고른다. 두 캡션 모드를 같은 영상으로 비교하기 위해 쓴다."""
+    return videos.sort_values("video_id").groupby("domain", sort=False).head(count)
+
+
 def video_path(relative: str) -> Path:
     """CSV의 NFC 경로를 실제 파일로 찾는다. macOS 파일명은 NFD일 수 있다."""
     root = config.video_dir()

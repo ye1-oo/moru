@@ -10,10 +10,12 @@ import json
 import re
 import time
 from datetime import datetime, timezone
+from datetime import timedelta
 from pathlib import Path
 from typing import TypeVar
 from zoneinfo import ZoneInfo
 
+import httpx
 from google import genai
 from google.genai import errors, types
 from google.genai._gaos.lib import compat_errors  # Interactions API가 내는 오류
@@ -24,8 +26,10 @@ from moru import config
 T = TypeVar("T", bound=BaseModel)
 PACIFIC = ZoneInfo("America/Los_Angeles")  # 일일 한도는 태평양 시간 자정에 초기화된다
 BACKOFF_SECONDS = (60, 180)  # 실패한 요청도 일일 한도를 쓰는 것으로 보여 적게 재시도한다
-RETRYABLE = {429, 500, 502, 503, 504}
-API_ERRORS = (errors.APIError, compat_errors.APIError)
+RETRYABLE = {None, 429, 500, 502, 503, 504}  # None은 네트워크 오류
+API_ERRORS = (errors.APIError, compat_errors.APIError, httpx.HTTPError)
+REQUEST_TIMEOUT_MS = 180_000
+UPLOAD_TIMEOUT_SECONDS = 180
 
 _client: genai.Client | None = None
 _last_call = 0.0
@@ -33,6 +37,10 @@ _last_call = 0.0
 
 class DailyQuotaExceeded(RuntimeError):
     """오늘 쓸 수 있는 요청을 다 썼다."""
+
+
+class ContentBlocked(RuntimeError):
+    """안전 필터가 입력을 막았다. 다시 보내거나 입력을 고쳐 우회하지 않는다."""
 
 
 class ServerBusy(RuntimeError):
@@ -43,7 +51,9 @@ def client() -> genai.Client:
     global _client
     if _client is None:
         # SDK의 자동 재시도는 보이지 않게 한도를 소모하므로 끈다.
-        options = types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1))
+        options = types.HttpOptions(
+            retry_options=types.HttpRetryOptions(attempts=1), timeout=REQUEST_TIMEOUT_MS
+        )
         _client = genai.Client(http_options=options)
     return _client
 
@@ -51,12 +61,13 @@ def client() -> genai.Client:
 def _log(**record) -> None:
     config.CACHE_DIR.mkdir(exist_ok=True)
     record["time"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    record["model"] = config.GEMINI_MODEL
     with config.LLM_LOG.open("a", encoding="utf-8") as file:
         file.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def calls_today() -> int:
-    """태평양 시간 기준 오늘 실제로 보낸 요청 수."""
+    """현재 모델로 태평양 시간 기준 오늘 실제로 보낸 요청 수. 한도는 모델별이다."""
     if not config.LLM_LOG.exists():
         return 0
     today = datetime.now(PACIFIC).date()
@@ -64,8 +75,16 @@ def calls_today() -> int:
     for line in config.LLM_LOG.read_text(encoding="utf-8").splitlines():
         record = json.loads(line)
         sent = datetime.fromisoformat(record["time"]).astimezone(PACIFIC).date()
-        count += sent == today and not record.get("cached", False)
+        same_model = record.get("model", config.GEMINI_MODEL) == config.GEMINI_MODEL
+        count += sent == today and same_model and not record.get("cached", False)
     return count
+
+
+def seconds_until_reset(margin: int = 300) -> float:
+    """다음 태평양 시간 자정(한국 시간 17:00)까지 남은 초. 여유 시간을 더한다."""
+    now = datetime.now(PACIFIC)
+    tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return (tomorrow - now).total_seconds() + margin
 
 
 def _wait_for_slot() -> None:
@@ -89,9 +108,13 @@ def _is_daily_quota(error: Exception) -> bool:
 def _upload(path: Path) -> object:
     with path.open("rb") as stream:
         file = client().files.upload(file=stream, config={"mime_type": "video/mp4"})
+    deadline = time.monotonic() + UPLOAD_TIMEOUT_SECONDS
     while not file.state or file.state.name != "ACTIVE":
         if file.state and file.state.name == "FAILED":
             raise RuntimeError(f"영상 처리 실패: {path.name}")
+        if time.monotonic() > deadline:
+            client().files.delete(name=file.name)
+            raise httpx.TimeoutException(f"영상 처리 시간 초과: {path.name}")
         time.sleep(3)
         file = client().files.get(name=file.name)
     return file
@@ -172,9 +195,11 @@ def generate(
             response = _send(prompt, schema, video, temperature)
         except API_ERRORS as error:
             status = _status(error)
-            _log(tag=tag, cached=False, error=status)
+            _log(tag=tag, cached=False, error=status, message=str(error)[:300])
             if _is_daily_quota(error):
                 raise DailyQuotaExceeded(str(error)) from error
+            if "prohibited_content" in str(error):
+                raise ContentBlocked(str(error)) from error
             if status not in RETRYABLE:
                 raise
             if attempt >= len(BACKOFF_SECONDS):
