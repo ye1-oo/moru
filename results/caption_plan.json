@@ -1,0 +1,533 @@
+{
+ "seed": 42,
+ "batch_size": 5,
+ "per_domain": 5,
+ "domains": {
+  "S01": [
+   "gross_motor"
+  ],
+  "S02": [
+   "gross_motor"
+  ],
+  "S03": [
+   "gross_motor"
+  ],
+  "S04": [
+   "gross_motor"
+  ],
+  "S05": [
+   "gross_motor"
+  ],
+  "S06": [
+   "gross_motor"
+  ],
+  "S07": [
+   "gross_motor"
+  ],
+  "S08": [
+   "gross_motor"
+  ],
+  "S09": [
+   "gross_motor"
+  ],
+  "S10": [
+   "gross_motor"
+  ],
+  "S11": [
+   "gross_motor"
+  ],
+  "S12": [
+   "gross_motor"
+  ],
+  "S13": [
+   "gross_motor"
+  ],
+  "S14": [
+   "gross_motor"
+  ],
+  "S15": [
+   "gross_motor"
+  ],
+  "S16": [
+   "gross_motor"
+  ],
+  "S17": [
+   "gross_motor"
+  ],
+  "S18": [
+   "gross_motor"
+  ],
+  "S19": [
+   "gross_motor"
+  ],
+  "B01": [
+   "self_care",
+   "language",
+   "fine_motor",
+   "self_care",
+   "self_care"
+  ],
+  "B02": [
+   "fine_motor",
+   "fine_motor",
+   "language",
+   "self_care",
+   "social"
+  ],
+  "B03": [
+   "language",
+   "self_care",
+   "cognition",
+   "language",
+   "social"
+  ],
+  "B04": [
+   "language",
+   "cognition",
+   "social",
+   "cognition",
+   "social"
+  ],
+  "B05": [
+   "fine_motor",
+   "fine_motor",
+   "cognition",
+   "cognition",
+   "social"
+  ],
+  "B06": [
+   "social",
+   "cognition",
+   "language",
+   "social",
+   "language"
+  ],
+  "B07": [
+   "fine_motor",
+   "fine_motor",
+   "social",
+   "self_care",
+   "self_care"
+  ],
+  "B08": [
+   "fine_motor",
+   "cognition",
+   "social",
+   "self_care",
+   "social"
+  ],
+  "B09": [
+   "self_care",
+   "language",
+   "language",
+   "language",
+   "cognition"
+  ],
+  "B10": [
+   "language",
+   "social",
+   "fine_motor",
+   "fine_motor",
+   "fine_motor"
+  ],
+  "B11": [
+   "fine_motor",
+   "social",
+   "social",
+   "self_care",
+   "fine_motor"
+  ],
+  "B12": [
+   "self_care",
+   "cognition",
+   "language",
+   "cognition",
+   "fine_motor"
+  ],
+  "B13": [
+   "self_care",
+   "language",
+   "self_care",
+   "language",
+   "cognition"
+  ],
+  "B14": [
+   "cognition",
+   "social",
+   "fine_motor",
+   "fine_motor",
+   "social"
+  ],
+  "B15": [
+   "gross_motor",
+   "language",
+   "social",
+   "fine_motor",
+   "social"
+  ],
+  "B16": [
+   "cognition",
+   "social",
+   "fine_motor",
+   "self_care"
+  ]
+ },
+ "units": [
+  {
+   "unit_id": "S01",
+   "call": "single",
+   "videos": [
+    "gross_motor_01"
+   ],
+   "generic": true
+  },
+  {
+   "unit_id": "S02",
+   "call": "single",
+   "videos": [
+    "gross_motor_02"
+   ],
+   "generic": true
+  },
+  {
+   "unit_id": "S03",
+   "call": "single",
+   "videos": [
+    "gross_motor_03"
+   ],
+   "generic": true
+  },
+  {
+   "unit_id": "S04",
+   "call": "single",
+   "videos": [
+    "gross_motor_04"
+   ],
+   "generic": true
+  },
+  {
+   "unit_id": "S05",
+   "call": "single",
+   "videos": [
+    "gross_motor_05"
+   ],
+   "generic": true
+  },
+  {
+   "unit_id": "S06",
+   "call": "single",
+   "videos": [
+    "gross_motor_06"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "S07",
+   "call": "single",
+   "videos": [
+    "gross_motor_07"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "S08",
+   "call": "single",
+   "videos": [
+    "gross_motor_08"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "S09",
+   "call": "single",
+   "videos": [
+    "gross_motor_09"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "S10",
+   "call": "single",
+   "videos": [
+    "gross_motor_10"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "S11",
+   "call": "single",
+   "videos": [
+    "gross_motor_11"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "S12",
+   "call": "single",
+   "videos": [
+    "gross_motor_12"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "S13",
+   "call": "single",
+   "videos": [
+    "gross_motor_13"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "S14",
+   "call": "single",
+   "videos": [
+    "gross_motor_14"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "S15",
+   "call": "single",
+   "videos": [
+    "gross_motor_15"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "S16",
+   "call": "single",
+   "videos": [
+    "gross_motor_16"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "S17",
+   "call": "single",
+   "videos": [
+    "gross_motor_17"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "S18",
+   "call": "single",
+   "videos": [
+    "gross_motor_18"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "S19",
+   "call": "single",
+   "videos": [
+    "gross_motor_19"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "B01",
+   "call": "batch",
+   "videos": [
+    "self_care_02",
+    "language_03",
+    "fine_motor_05",
+    "self_care_05",
+    "self_care_04"
+   ],
+   "generic": true
+  },
+  {
+   "unit_id": "B02",
+   "call": "batch",
+   "videos": [
+    "fine_motor_02",
+    "fine_motor_01",
+    "language_01",
+    "self_care_01",
+    "social_02"
+   ],
+   "generic": true
+  },
+  {
+   "unit_id": "B03",
+   "call": "batch",
+   "videos": [
+    "language_02",
+    "self_care_03",
+    "cognition_02",
+    "language_05",
+    "social_03"
+   ],
+   "generic": true
+  },
+  {
+   "unit_id": "B04",
+   "call": "batch",
+   "videos": [
+    "language_04",
+    "cognition_03",
+    "social_04",
+    "cognition_05",
+    "social_05"
+   ],
+   "generic": true
+  },
+  {
+   "unit_id": "B05",
+   "call": "batch",
+   "videos": [
+    "fine_motor_03",
+    "fine_motor_04",
+    "cognition_01",
+    "cognition_04",
+    "social_01"
+   ],
+   "generic": true
+  },
+  {
+   "unit_id": "B06",
+   "call": "batch",
+   "videos": [
+    "social_14",
+    "cognition_10",
+    "language_07",
+    "social_15",
+    "language_14"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "B07",
+   "call": "batch",
+   "videos": [
+    "fine_motor_12",
+    "fine_motor_06",
+    "social_11",
+    "self_care_08",
+    "self_care_13"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "B08",
+   "call": "batch",
+   "videos": [
+    "fine_motor_13",
+    "cognition_11",
+    "social_06",
+    "self_care_12",
+    "social_07"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "B09",
+   "call": "batch",
+   "videos": [
+    "self_care_09",
+    "language_09",
+    "language_10",
+    "language_15",
+    "cognition_08"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "B10",
+   "call": "batch",
+   "videos": [
+    "language_12",
+    "social_18",
+    "fine_motor_17",
+    "fine_motor_09",
+    "fine_motor_18"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "B11",
+   "call": "batch",
+   "videos": [
+    "fine_motor_19",
+    "social_08",
+    "social_12",
+    "self_care_07",
+    "fine_motor_10"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "B12",
+   "call": "batch",
+   "videos": [
+    "self_care_06",
+    "cognition_14",
+    "language_13",
+    "cognition_09",
+    "fine_motor_14"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "B13",
+   "call": "batch",
+   "videos": [
+    "self_care_10",
+    "language_06",
+    "self_care_14",
+    "language_08",
+    "cognition_12"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "B14",
+   "call": "batch",
+   "videos": [
+    "cognition_13",
+    "social_10",
+    "fine_motor_11",
+    "fine_motor_07",
+    "social_17"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "B15",
+   "call": "batch",
+   "videos": [
+    "gross_motor_20",
+    "language_11",
+    "social_09",
+    "fine_motor_08",
+    "social_13"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "B16",
+   "call": "batch",
+   "videos": [
+    "cognition_06",
+    "social_16",
+    "fine_motor_15",
+    "self_care_11"
+   ],
+   "generic": false
+  },
+  {
+   "unit_id": "X01",
+   "call": "batch",
+   "videos": [
+    "fine_motor_06",
+    "cognition_09",
+    "self_care_09",
+    "fine_motor_13",
+    "cognition_06"
+   ],
+   "generic": false,
+   "purpose": "exp_b_diary"
+  }
+ ]
+}

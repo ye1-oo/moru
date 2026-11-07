@@ -1,0 +1,171 @@
+"""역할 분리형 멀티 에이전트 파이프라인의 조율기.
+
+캡션 에이전트(인덱싱 때 1회) → 검색 에이전트 → 채점 에이전트 → 집계 → 리포트 에이전트
+→ (조건부) 체크리스트 에이전트, (조건부) 상담 요약 에이전트(인터페이스만).
+
+조율 규칙은 고정된 if 문이다. 에이전트가 스스로 다음 행동을 고르지 않는다.
+- '정보 부족' 영역이 하나라도 있으면 → 그 영역의 판단 보류 문항으로 체크리스트 에이전트 호출
+- 0~1점 문항이 있는 영역이 2주 연속이면 → 상담 요약 에이전트 호출 대상으로 기록(구현 안 함)
+
+비교 실험용 조건(CONDITIONS)도 여기서 정의한다.
+"""
+
+import json
+from dataclasses import dataclass, field
+from datetime import date as Date
+from pathlib import Path
+
+from moru import caption, config, context, index, report, retrieve, score
+from moru.context import Toggles
+from moru.schemas import Diary, ItemScore, KdstItem
+
+CHILD = "child_A"
+DIARY_FILE = config.DIARY_DIR / "child_A.jsonl"
+AGE_BAND = "18-19"
+WEEKS = {1: (Date(2026, 10, 19), Date(2026, 10, 25)), 2: (Date(2026, 10, 26), Date(2026, 11, 1))}
+RAW = config.RESULTS_DIR / "raw" / "exp_b"
+CONTEXTS = config.RESULTS_DIR / "contexts"
+
+
+@dataclass(frozen=True)
+class Condition:
+    name: str
+    label: str
+    toggles: Toggles = field(default_factory=Toggles)
+    content: index.Content = "both"
+    retrieval: str = "per_item"
+    single: bool = False
+
+
+CONDITIONS = {c.name: c for c in [
+    Condition("multi", "멀티 에이전트(전체 적용)"),
+    Condition("single", "단일 에이전트", single=True),
+    Condition("no_date", "날짜 태그 제거", Toggles(use_date_tags=False)),
+    Condition("no_source", "출처 태그 제거", Toggles(use_source_tags=False)),
+    Condition("no_abstain", "판단 보류 규칙 제거", Toggles(use_abstain_rule=False)),
+    Condition("none", "전체 제거", Toggles(False, False, False)),
+    Condition("parent_only", "일기만", content="parent"),
+    Condition("caption_only", "캡션만", content="caption"),
+    Condition("batched", "일괄 검색", retrieval="batched"),
+]}
+
+
+def load_items() -> list[KdstItem]:
+    return [KdstItem(**row) for row in json.loads((config.KDST_DIR / f"{AGE_BAND}.json").read_text(encoding="utf-8"))]
+
+
+def week_diaries(week: int) -> list[Diary]:
+    start, end = WEEKS[week]
+    return [d for d in index.load_diaries(DIARY_FILE) if start <= d.date <= end]
+
+
+_qdrant = None
+
+
+def qdrant():
+    global _qdrant
+    if _qdrant is None:
+        _qdrant = index.client()
+    return _qdrant
+
+
+def ensure_index(content: str) -> str:
+    """세 가지 내용(both/parent/caption)의 컬렉션을 만든다. 임베딩은 캐시된다."""
+    name = index.collection_name("kure", content)
+    if not qdrant().collection_exists(name):
+        index.build(qdrant(), index.load_diaries(DIARY_FILE), index.load_captions(), "kure", content)
+    return name
+
+
+def raw_path(condition: str, week: int, repeat: int) -> Path:
+    return RAW / f"{condition}_w{week}_r{repeat}.json"
+
+
+def prepare(condition: Condition, week: int) -> dict:
+    """LLM 호출 전까지(검색 + 컨텍스트 조립). 호출 없이 컨텍스트를 확인할 수 있다."""
+    items = load_items()
+    start, end = WEEKS[week]
+    diaries = week_diaries(week)
+    if condition.single:
+        media = [v for d in diaries for v in d.media]
+        numbers = {v: n for n, v in enumerate(media, 1)}
+        prompt = context.single_agent_context(items, diaries, numbers, 18, str(start), str(end), condition.toggles)
+        return {"items": items, "diaries": diaries, "prompt": prompt, "evidence": [],
+                "videos": [caption.video_path(_video_file(v)) for v in media]}
+    collection = ensure_index(condition.content)
+    search = retrieve.per_item if condition.retrieval == "per_item" else retrieve.batched
+    evidence = search(qdrant(), collection, items, CHILD, start, end)
+    prompt = context.scoring_context(items, evidence, 18, str(start), str(end), condition.toggles)
+    return {"items": items, "diaries": diaries, "prompt": prompt, "evidence": evidence, "videos": []}
+
+
+def _video_file(video_id: str) -> str:
+    rows = caption.load_videos()
+    return rows.loc[rows["video_id"] == video_id, "file"].iloc[0]
+
+
+def run_scoring(name: str, week: int, repeat: int = 0) -> dict:
+    """한 조건·한 주·한 반복을 채점하고 원본 결과를 저장한다(LLM 1회, 캐시되면 0회)."""
+    condition = CONDITIONS[name]
+    path = raw_path(name, week, repeat)
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    prep = prepare(condition, week)
+    context.save(prep["prompt"], CONTEXTS / f"{name}_w{week}.txt")
+    if condition.single:
+        scores = score.single_agent(prep["prompt"], prep["items"], prep["videos"], repeat)
+    else:
+        scores = score.scoring_agent(prep["prompt"], prep["items"], repeat, tag=f"score:{name}")
+    captions = index.load_captions()
+    result = {
+        "condition": name, "label": condition.label, "week": week, "repeat": repeat,
+        "model": config.GEMINI_MODEL, "prompt": prep["prompt"],
+        "evidence": {e.item_id: [r.diary_id for r in e.records] for e in prep["evidence"]},
+        "scores": [s.model_dump() | {"flags": score.flags(s, prep["diaries"], captions)} for s in scores],
+    }
+    RAW.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
+    return result
+
+
+def run_week_report(week: int, repeat: int = 0) -> dict:
+    """멀티 에이전트 기본 조건의 end-to-end: 채점 → 집계 → 리포트 → 조율 규칙."""
+    items = load_items()
+    start, end = WEEKS[week]
+    scored = run_scoring("multi", week, repeat)
+    scores = [ItemScore(**{k: v for k, v in s.items() if k != "flags"}) for s in scored["scores"]]
+    domains = report.aggregate(items, scores)
+    previous = None
+    if week - 1 in WEEKS and raw_path("multi", week - 1, repeat).exists():
+        prev = json.loads(raw_path("multi", week - 1, repeat).read_text(encoding="utf-8"))
+        previous = report.aggregate(items, [ItemScore(**{k: v for k, v in s.items() if k != "flags"})
+                                            for s in prev["scores"]])
+    week_out = {"child_id": CHILD, "week": week, "start": str(start), "end": str(end), "age_months": 18,
+                "domains": domains, "changes": report.changes(domains, previous), "handoffs": []}
+
+    prompt = context.report_context(18, str(start), str(end), domains, week_out["changes"], report.highlights(scores))
+    context.save(prompt, CONTEXTS / f"report_w{week}.txt")
+    week_out["report"] = report.report_agent(prompt, repeat).model_dump()
+
+    # 조율 규칙 1: 정보 부족 영역 → 체크리스트 에이전트
+    insufficient = {d["domain"] for d in domains if d["status"] == "정보 부족"}
+    if insufficient:
+        by_id = {s.item_id: s for s in scores}
+        targets = [i for i in items if i.domain in insufficient and by_id[i.item_id].score is None]
+        prompt = context.checklist_context(18, targets)
+        context.save(prompt, CONTEXTS / f"checklist_w{week}.txt")
+        week_out["checklist"] = report.checklist_agent(prompt, [i.item_id for i in targets], repeat).model_dump()
+        week_out["handoffs"].append(f"체크리스트 에이전트 호출: 정보 부족 영역 {sorted(insufficient)}")
+
+    # 조율 규칙 2: 0~1점 문항이 있는 영역이 2주 연속 → 상담 요약 에이전트(인터페이스만)
+    if previous:
+        prev = {d["domain"]: d for d in previous}
+        lasting = [d["domain"] for d in domains if d["concern"] and prev.get(d["domain"], {}).get("concern")]
+        for domain in lasting:
+            week_out["handoffs"].append(f"상담 요약 에이전트 호출 대상(미구현): {domain} 2주 연속 관찰 필요")
+
+    out = config.RESULTS_DIR / "raw" / "reports"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / f"{CHILD}_w{week}_r{repeat}.json").write_text(json.dumps(week_out, ensure_ascii=False, indent=1), encoding="utf-8")
+    (out / f"{CHILD}_w{week}_r{repeat}.md").write_text(report.to_markdown(week_out), encoding="utf-8")
+    return week_out

@@ -34,3 +34,47 @@ def test_first_per_domain_picks_five_each():
     picked = first_per_domain(load_videos(), 5)
     assert len(picked) == 30
     assert set(picked["domain"].value_counts()) == {5}
+
+
+def fake_generate(payload, retries):
+    """llm.generate처럼 check를 호출하고, 실패하면 재시도한다."""
+    from moru.schemas import CaptionBatch
+
+    def generate(prompt, *, schema, videos, check, tag):
+        for attempt in payload:
+            result = CaptionBatch.model_validate(attempt)
+            try:
+                check(result)
+                return result
+            except ValueError:
+                retries.append(1)
+        raise ValueError("재시도 초과")
+
+    return generate
+
+
+def batch_rows():
+    return [{"video_id": f"v{i}", "file": "x/y.mp4"} for i in range(1, 4)]
+
+
+def captions_for(*numbers):
+    return {"captions": [{"video_number": n, "caption_text": f"캡션{n}"} for n in numbers]}
+
+
+def test_caption_batch_maps_numbers_to_videos(monkeypatch):
+    from moru import caption, llm
+
+    monkeypatch.setattr(caption, "video_path", lambda relative: relative)
+    monkeypatch.setattr(llm, "generate", fake_generate([captions_for(3, 1, 2)], []))
+    result = caption.caption_batch(batch_rows(), "generic", [])
+    assert result == {"v1": "캡션1", "v2": "캡션2", "v3": "캡션3"}
+
+
+def test_caption_batch_retries_when_a_video_is_missing(monkeypatch):
+    from moru import caption, llm
+
+    retries = []
+    monkeypatch.setattr(caption, "video_path", lambda relative: relative)
+    monkeypatch.setattr(llm, "generate", fake_generate([captions_for(1, 2), captions_for(1, 2, 3)], retries))
+    assert len(caption.caption_batch(batch_rows(), "generic", [])) == 3
+    assert retries == [1]

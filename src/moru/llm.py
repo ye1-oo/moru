@@ -12,14 +12,14 @@ import time
 from datetime import datetime, timezone
 from datetime import timedelta
 from pathlib import Path
-from typing import TypeVar
+from typing import Callable, TypeVar
 from zoneinfo import ZoneInfo
 
 import httpx
 from google import genai
 from google.genai import errors, types
 from google.genai._gaos.lib import compat_errors  # Interactions API가 내는 오류
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from moru import config
 
@@ -120,7 +120,7 @@ def _upload(path: Path) -> object:
     return file
 
 
-def _send(prompt: str, schema: type[BaseModel] | None, video: Path | None, temperature: float | None):
+def _send(prompt: str, schema: type[BaseModel] | None, videos: list[Path], temperature: float | None):
     generation_config: dict = {"thinking_level": config.THINKING_LEVEL}
     if temperature is not None:
         generation_config["temperature"] = temperature
@@ -136,20 +136,23 @@ def _send(prompt: str, schema: type[BaseModel] | None, video: Path | None, tempe
             "schema": schema.model_json_schema(),
         }
 
-    uploaded = None
+    uploaded = []
     try:
-        if video is None:
+        if not videos:
             request["input"] = prompt
         else:
-            uploaded = _upload(video)
-            request["input"] = [
-                {"type": "video", "uri": uploaded.uri, "mime_type": uploaded.mime_type},
-                {"type": "text", "text": prompt},
-            ]
+            parts: list[dict] = []
+            for number, video in enumerate(videos, 1):
+                file = _upload(video)
+                uploaded.append(file)
+                if len(videos) > 1:  # 단독 호출은 앞의 18개처럼 번호 없이 보낸다
+                    parts.append({"type": "text", "text": f"[영상 {number}]"})
+                parts.append({"type": "video", "uri": file.uri, "mime_type": file.mime_type})
+            request["input"] = [*parts, {"type": "text", "text": prompt}]
         return client().interactions.create(**request)
     finally:
-        if uploaded is not None:
-            client().files.delete(name=uploaded.name)
+        for file in uploaded:
+            client().files.delete(name=file.name)
 
 
 def _digest(path: Path) -> str:
@@ -160,7 +163,8 @@ def generate(
     prompt: str,
     *,
     schema: type[T] | None = None,
-    video: Path | None = None,
+    videos: list[Path] | None = None,
+    check: Callable[[T], None] | None = None,
     temperature: float | None = 0.0,
     repeat: int = 0,
     tag: str = "",
@@ -168,12 +172,13 @@ def generate(
     """모델을 호출한다. schema를 주면 검증된 객체를, 아니면 문자열을 돌려준다.
 
     repeat는 같은 입력을 반복 실험할 때 캐시를 구분하는 번호다.
+    check는 스키마로 잡을 수 없는 조건을 검사한다. ValueError를 내면 재시도한다.
     """
     key_source = {
         "model": config.GEMINI_MODEL,
         "prompt": prompt,
         "schema": schema.model_json_schema() if schema else None,
-        "video": _digest(video) if video else None,
+        "videos": [_digest(video) for video in videos or []],
         "temperature": temperature,
         "thinking": config.THINKING_LEVEL,
         "repeat": repeat,
@@ -192,7 +197,7 @@ def generate(
         _wait_for_slot()
         started = time.monotonic()
         try:
-            response = _send(prompt, schema, video, temperature)
+            response = _send(prompt, schema, videos or [], temperature)
         except API_ERRORS as error:
             status = _status(error)
             _log(tag=tag, cached=False, error=status, message=str(error)[:300])
@@ -220,7 +225,9 @@ def generate(
         text = response.output_text
         try:
             result = schema.model_validate_json(text) if schema else text
-        except ValidationError:
+            if check:
+                check(result)
+        except ValueError:  # ValidationError도 ValueError다
             invalid += 1
             if invalid > config.MAX_RETRIES:
                 raise

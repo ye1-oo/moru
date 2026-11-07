@@ -1,1 +1,109 @@
-"""실험 B: 주간 리포트."""
+"""실험 B 실행기와 "오늘 몫" 작업 큐.
+
+예: python experiments/exp_b_weekly_report.py today          # 남은 한도 안에서 큐를 순서대로 실행
+    python experiments/exp_b_weekly_report.py plan           # 큐와 진행 상황만 출력(호출 없음)
+    python experiments/exp_b_weekly_report.py run multi 2 0  # 조건·주·반복 하나
+    python experiments/exp_b_weekly_report.py dump           # 호출 없이 조건별 컨텍스트만 저장
+
+큐는 우선순위 순서다. 이미 결과가 있는 작업은 건너뛰고(캐시), 한도에 닿으면 멈춘다.
+다음 날 같은 명령을 다시 실행하면 이어서 진행된다.
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from moru import config, context, llm, pipeline  # noqa: E402
+
+# (작업 종류, 조건, 주, 반복). 우선순위: 기본 end-to-end > ① 단일 vs 멀티 > ② 요소별 제거 > ③ 일기/캡션 > ④ 검색 방식
+ABLATIONS = ["no_date", "no_source", "no_abstain", "none"]
+MODALITY = ["parent_only", "caption_only"]
+
+
+def queue() -> list[tuple]:
+    q = [("score", "multi", 1, 0), ("score", "multi", 2, 0), ("report", "multi", 1, 0), ("report", "multi", 2, 0)]
+    for rep in range(3):
+        if rep:
+            q += [("score", "multi", w, rep) for w in (1, 2)]
+        q += [("score", "single", w, rep) for w in (1, 2)]
+        q += [("score", c, w, rep) for c in ABLATIONS for w in (1, 2)]
+        q += [("score", c, w, rep) for c in MODALITY for w in (1, 2)]
+        q += [("score", "batched", w, rep) for w in (1, 2)]
+    return q
+
+
+def report_done(week: int, rep: int) -> bool:
+    return (config.RESULTS_DIR / "raw" / "reports" / f"{pipeline.CHILD}_w{week}_r{rep}.json").exists()
+
+
+def done(task: tuple) -> bool:
+    kind, cond, week, rep = task
+    return report_done(week, rep) if kind == "report" else pipeline.raw_path(cond, week, rep).exists()
+
+
+def calls_needed(task: tuple) -> int:
+    kind = task[0]
+    return 2 if kind == "report" else 1  # 리포트 + (조건부) 체크리스트
+
+
+def run(task: tuple) -> None:
+    kind, cond, week, rep = task
+    if kind == "report":
+        pipeline.run_week_report(week, rep)
+    else:
+        pipeline.run_scoring(cond, week, rep)
+
+
+def today(reserve: int = 0) -> None:
+    pending = [t for t in queue() if not done(t)]
+    print(f"{config.GEMINI_MODEL}: 오늘 {llm.calls_today()}/{config.GEMINI_RPD}회 사용, 남은 작업 {len(pending)}개", flush=True)
+    for task in pending:
+        left = config.GEMINI_RPD - llm.calls_today() - reserve
+        if left < calls_needed(task):
+            print(f"오늘 한도 소진(남은 {left}회). 다음 작업: {task}", flush=True)
+            break
+        try:
+            run(task)
+            print(f"  완료 {task} (오늘 {llm.calls_today()}회)", flush=True)
+        except llm.DailyQuotaExceeded as error:
+            print(f"한도 초과로 중단: {str(error)[:150]}", flush=True)
+            break
+        except llm.ServerBusy as error:
+            print(f"서버 혼잡으로 중단, 다시 실행하면 이어집니다: {str(error)[:150]}", flush=True)
+            break
+        except ValueError as error:
+            print(f"  실패(형식 오류 재시도 초과), 건너뜀 {task}: {str(error)[:150]}", flush=True)
+        except llm.ContentBlocked:
+            print(f"  안전 필터 차단, 건너뜀 {task}", flush=True)
+    status()
+
+
+def status() -> None:
+    q = queue()
+    print(f"진행: {sum(done(t) for t in q)}/{len(q)}")
+    for t in q:
+        print(("  [x] " if done(t) else "  [ ] ") + " ".join(map(str, t)))
+
+
+def dump() -> None:
+    """호출 없이 조건별 컨텍스트를 저장하고, 문항 원문을 가린 사본을 results/examples/에 둔다."""
+    items = pipeline.load_items()
+    for name, condition in pipeline.CONDITIONS.items():
+        for week in (1, 2):
+            prompt = pipeline.prepare(condition, week)["prompt"]
+            context.save(prompt, pipeline.CONTEXTS / f"{name}_w{week}.txt")
+            context.save(context.mask_items(prompt, items),
+                         config.RESULTS_DIR / "examples" / "contexts" / f"{name}_w{week}.txt")
+    print("저장:", pipeline.CONTEXTS, "/ 마스킹본:", config.RESULTS_DIR / "examples" / "contexts")
+
+
+if __name__ == "__main__":
+    command = sys.argv[1] if len(sys.argv) > 1 else "plan"
+    if command == "today":
+        today()
+    elif command == "run":
+        run(("score", sys.argv[2], int(sys.argv[3]), int(sys.argv[4])))
+    elif command == "dump":
+        dump()
+    else:
+        status()

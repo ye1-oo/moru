@@ -1,0 +1,97 @@
+week,item_id,gold_score_or_abstain,evidence_diaries,case,note
+1,18-19_gross_motor_01,abstain,,no_evidence,
+1,18-19_gross_motor_02,abstain,,no_evidence,
+1,18-19_gross_motor_03,abstain,,no_evidence,
+1,18-19_gross_motor_04,2,A_d03,ambiguous_time,어른 손을 잡고 한 칸씩(난간 대신 손). '어제'
+1,18-19_gross_motor_05,2,A_d02,caption_only,굴러가는 공을 걸어가서 참(정지된 공은 아님)
+1,18-19_gross_motor_06,abstain,,no_evidence,
+1,18-19_gross_motor_07,abstain,,no_evidence,
+1,18-19_gross_motor_08,abstain,,no_evidence,
+1,18-19_fine_motor_01,abstain,,no_evidence,
+1,18-19_fine_motor_02,abstain,,no_evidence,
+1,18-19_fine_motor_03,abstain,,no_evidence,
+1,18-19_fine_motor_04,abstain,,no_evidence,
+1,18-19_fine_motor_05,2,A_d05,conflict,숟가락 서술 vs 손으로 집어 먹는 영상(1차 실행 후 정답 보완)
+1,18-19_fine_motor_06,abstain,,no_evidence,
+1,18-19_fine_motor_07,abstain,,no_evidence,
+1,18-19_fine_motor_08,abstain,,no_evidence,
+1,18-19_cognition_01,abstain,,no_evidence,
+1,18-19_cognition_02,abstain,,no_evidence,
+1,18-19_cognition_03,abstain,,no_evidence,
+1,18-19_cognition_04,abstain,,no_evidence,
+1,18-19_cognition_05,abstain,,no_evidence,
+1,18-19_cognition_06,abstain,,no_evidence,
+1,18-19_cognition_07,abstain,,no_evidence,
+1,18-19_cognition_08,abstain,,no_evidence,
+1,18-19_language_01,abstain,,no_evidence,
+1,18-19_language_02,abstain,,no_evidence,
+1,18-19_language_03,abstain,,no_evidence,
+1,18-19_language_04,abstain,,no_evidence,
+1,18-19_language_05,1,A_d04,parent,엄마·아빠 외 3단어
+1,18-19_language_06,abstain,,no_evidence,
+1,18-19_language_07,1,A_d04,parent,다른 말은 따라 하지 않는다는 부정 서술(±1 허용 권장)
+1,18-19_language_08,abstain,,no_evidence,
+1,18-19_social_01,3,A_d01,parent,책을 건네며 읽어 달라는 행동
+1,18-19_social_02,3,A_d01,parent,시키면 인사
+1,18-19_social_03,abstain,,no_evidence,
+1,18-19_social_04,abstain,,no_evidence,
+1,18-19_social_05,abstain,,no_evidence,
+1,18-19_social_06,abstain,,no_evidence,
+1,18-19_social_07,abstain,,no_evidence,
+1,18-19_social_08,abstain,,no_evidence,
+1,18-19_self_care_01,3,A_d07,caption_only,유아용 컵을 혼자 잡고 마심(일기엔 운 것만)
+1,18-19_self_care_02,abstain,,no_evidence,
+1,18-19_self_care_03,3,A_d07,ambiguous_time,스스로 칫솔질. '지난주부터'
+1,18-19_self_care_04,abstain,,no_evidence,
+1,18-19_self_care_05,2,A_d05,conflict,부모는 숟가락으로 혼자 먹었다고 썼지만 영상은 손으로 집어 먹음
+1,18-19_self_care_06,abstain,,no_evidence,
+1,18-19_self_care_07,abstain,,no_evidence,
+1,18-19_self_care_08,abstain,,no_evidence,
+2,18-19_gross_motor_01,abstain,,no_evidence,
+2,18-19_gross_motor_02,abstain,,no_evidence,
+2,18-19_gross_motor_03,abstain,,no_evidence,
+2,18-19_gross_motor_04,abstain,,no_evidence,
+2,18-19_gross_motor_05,abstain,,no_evidence,
+2,18-19_gross_motor_06,2,A_d10,both,엎드린 자세에서 혼자 일어섬(쪼그린 자세는 아님)
+2,18-19_gross_motor_07,abstain,,no_evidence,
+2,18-19_gross_motor_08,abstain,,no_evidence,
+2,18-19_fine_motor_01,abstain,,no_evidence,
+2,18-19_fine_motor_02,2,A_d09,conflict,부모는 혼자 낙서했다고 썼지만 영상은 다른 사람이 그리는 것을 지켜보고 가리킴
+2,18-19_fine_motor_03,abstain,,bait,블록을 아직 꺼내지 않음(유혹 문항)
+2,18-19_fine_motor_04,3,A_d14,caption_only,책장(플랩)을 넘김. 일기엔 '책을 좋아한다'뿐
+2,18-19_fine_motor_05,3,A_d12,caption_only,숟가락으로 떠먹음(1차 실행 후 정답 보완)
+2,18-19_fine_motor_06,abstain,,no_evidence,
+2,18-19_fine_motor_07,abstain,,bait,블록을 아직 꺼내지 않음(유혹 문항)
+2,18-19_fine_motor_08,abstain,,bait,블록을 아직 꺼내지 않음(유혹 문항)
+2,18-19_cognition_01,abstain,,no_evidence,
+2,18-19_cognition_02,3,A_d08,both,도형 한 조각 끼움
+2,18-19_cognition_03,abstain,,no_evidence,
+2,18-19_cognition_04,abstain,,no_evidence,
+2,18-19_cognition_05,abstain,,no_evidence,
+2,18-19_cognition_06,abstain,,no_evidence,
+2,18-19_cognition_07,abstain,,no_evidence,
+2,18-19_cognition_08,abstain,,no_evidence,
+2,18-19_language_01,abstain,,no_evidence,
+2,18-19_language_02,3,A_d10,parent,'아니' 사용
+2,18-19_language_03,3,A_d13,both,이름을 들은 그림 카드를 가리킴
+2,18-19_language_04,3,A_d11;A_d13,both,이름을 듣고 동물 찾기
+2,18-19_language_05,1,A_d10,parent,여전히 몇 단어
+2,18-19_language_06,abstain,,no_evidence,
+2,18-19_language_07,abstain,,no_evidence,
+2,18-19_language_08,abstain,,no_evidence,
+2,18-19_social_01,abstain,,bait,책을 좋아한다는 말만 있음(유혹 문항)
+2,18-19_social_02,abstain,,no_evidence,
+2,18-19_social_03,abstain,,no_evidence,
+2,18-19_social_04,abstain,,no_evidence,
+2,18-19_social_05,abstain,,no_evidence,
+2,18-19_social_06,abstain,,no_evidence,
+2,18-19_social_07,abstain,,no_evidence,
+2,18-19_social_08,abstain,,no_evidence,
+2,18-19_self_care_01,3,A_d12,caption_only,컵을 들어 물을 마심
+2,18-19_self_care_02,abstain,,no_evidence,
+2,18-19_self_care_03,abstain,,no_evidence,
+2,18-19_self_care_04,abstain,,no_evidence,
+2,18-19_self_care_05,3,A_d12,caption_only,숟가락으로 떠먹음
+2,18-19_self_care_06,abstain,,no_evidence,
+2,18-19_self_care_07,abstain,,no_evidence,
+2,18-19_self_care_08,abstain,,no_evidence,

@@ -35,9 +35,20 @@ class Diary(BaseModel):
 
 
 class Caption(BaseModel):
-    """캡셔닝 LLM의 출력. 부모 일기는 입력에 넣지 않는다."""
+    """영상 1개 캡셔닝 출력(단독 호출)."""
 
     caption_text: str = Field(description="관찰된 행동을 해석 없이 객관적으로 묘사한 한국어 문장들")
+
+
+class VideoCaption(BaseModel):
+    video_number: int = Field(description="[영상 N]의 번호 N")
+    caption_text: str = Field(description="이 영상에서만 관찰된 행동을 객관적으로 묘사한 한국어 문장들")
+
+
+class CaptionBatch(BaseModel):
+    """영상 여러 개를 한 번에 보낼 때의 출력. 무료 한도 때문에 묶어서 호출한다."""
+
+    captions: list[VideoCaption]
 
 
 class ItemResult(BaseModel):
@@ -72,3 +83,67 @@ class DomainResult(BaseModel):
 
     domain: Domain
     items: list[ItemResult]
+
+
+# ------------------------------------------------------------------ 에이전트 입출력
+# 역할 분리형 멀티 에이전트 파이프라인: 캡션 → 검색 → 채점 → 리포트 → (조건부) 체크리스트.
+# 채점·리포트·체크리스트 에이전트의 LLM 출력은 아래 *Output 스키마로 받는다. 스키마는
+# 일부러 느슨하게 두고(점수-근거 일관성은 강제하지 않음), 규칙 위반은 evaluate.py가 지표로 센다.
+# 강제하면 "판단 보류 규칙 제거" 조건에서 검증 실패 재시도가 한도를 소모하기 때문이다.
+
+
+class Record(BaseModel):
+    """검색 에이전트가 돌려주는 근거 기록(일기 한 편 = 청크 하나)."""
+
+    diary_id: str
+    date: str
+    age_months: int
+    parent_text: str
+    caption_text: str
+    score: float | None = None  # 검색 유사도(MaxSim)
+
+
+class Evidence(BaseModel):
+    """검색 에이전트의 출력: 문항별 근거 기록."""
+
+    item_id: str
+    records: list[Record]
+
+
+class ItemScore(BaseModel):
+    item_id: str
+    score: int | None = Field(description="0~3 정수 또는 null")
+    evidence_quote: str | None = Field(description="근거 기록에서 그대로 옮긴 문장")
+    evidence_date: str | None = Field(description="근거 기록의 날짜 YYYY-MM-DD")
+    source: Source | None = Field(description="parent 또는 caption")
+    confidence: float = Field(description="0~1")
+
+
+class ScoringOutput(BaseModel):
+    """채점 에이전트(와 단일 에이전트)의 출력."""
+
+    items: list[ItemScore]
+
+
+class DomainNote(BaseModel):
+    domain: Domain
+    note: str = Field(description="이 영역에 대한 한두 문장")
+
+
+class ReportOutput(BaseModel):
+    """리포트 에이전트의 출력: 종합 소견."""
+
+    summary: str = Field(description="3~5문장 종합 소견. 진단처럼 단정하지 않는다")
+    domain_notes: list[DomainNote]
+
+
+class ChecklistEntry(BaseModel):
+    item_id: str
+    observe: str = Field(description="이번 주에 관찰해 볼 행동 한 문장")
+    play: str = Field(description="그 행동을 자연스럽게 볼 수 있는 놀이 방법 한 문장")
+
+
+class ChecklistOutput(BaseModel):
+    """체크리스트 에이전트의 출력."""
+
+    entries: list[ChecklistEntry]

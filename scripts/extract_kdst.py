@@ -103,8 +103,31 @@ def parse_items(pdf: Path) -> dict[str, list[str]]:
             found.setdefault(row["domain"], {})[num] = join_lines([w["text"] for w in words])
 
     return {
-        name: [texts[n] for n in sorted(texts)] for name, texts in found.items()
+        name: fix_wraps([texts[n] for n in sorted(texts)]) for name, texts in found.items()
     }
+
+
+ENDINGS = (".", ")", "]", "?", "”", "다")
+
+
+def fix_wraps(texts: list[str]) -> list[str]:
+    """세 줄짜리 문항의 첫 줄이 앞 문항에 붙는 경우를 고친다.
+
+    앞 문항이 문장으로 끝나지 않으면, 마지막 문장 뒤에 남은 조각을 다음 문항 앞으로 옮긴다.
+    예: "뒷걸음질할 수 있다. 난간을 붙잡고 ... 모은 뒤 한" + "발씩 한발씩 계단을 올라간다."
+    """
+    texts = list(texts)
+    for i in range(len(texts) - 1):
+        text = texts[i]
+        if text.endswith(ENDINGS):
+            continue
+        cut = max(text.rfind(". "), text.rfind(".) "), text.rfind("] "))
+        head, tail = (text[: cut + 1].rstrip(), text[cut + 1 :].strip()) if cut >= 0 else ("", text)
+        if not head:
+            continue
+        texts[i] = head
+        texts[i + 1] = join_lines([tail, texts[i + 1]])
+    return texts
 
 
 def main() -> None:
