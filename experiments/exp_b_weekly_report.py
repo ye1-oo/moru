@@ -21,14 +21,15 @@ MODALITY = ["parent_only", "caption_only"]
 
 
 def queue() -> list[tuple]:
+    """2026-11-08 조정: ④ 일괄 검색은 향후 실험 계획으로 돌리고, 아낀 호출을 ①② 반복에 쓴다.
+    우선순위: 기본 end-to-end > ① 단일 > ② 요소별 제거 > ③ 일기만/캡션만 > ①② 반복 > 2주 합산 리포트."""
     q = [("score", "multi", 1, 0), ("score", "multi", 2, 0), ("report", "multi", 1, 0), ("report", "multi", 2, 0)]
-    for rep in range(3):
-        if rep:
-            q += [("score", "multi", w, rep) for w in (1, 2)]
-        q += [("score", "single", w, rep) for w in (1, 2)]
-        q += [("score", c, w, rep) for c in ABLATIONS for w in (1, 2)]
-        q += [("score", c, w, rep) for c in MODALITY for w in (1, 2)]
-        q += [("score", "batched", w, rep) for w in (1, 2)]
+    q += [("score", "single", w, 0) for w in (1, 2)]
+    q += [("score", c, w, 0) for c in ABLATIONS for w in (1, 2)]
+    q += [("score", c, w, 0) for c in MODALITY for w in (1, 2)]
+    for rep in (1, 2):
+        q += [("score", c, w, rep) for c in ["multi", "single", *ABLATIONS] for w in (1, 2)]
+    q += [("combined", "multi", 0, 0)]
     return q
 
 
@@ -36,20 +37,38 @@ def report_done(week: int, rep: int) -> bool:
     return (config.RESULTS_DIR / "raw" / "reports" / f"{pipeline.CHILD}_w{week}_r{rep}.json").exists()
 
 
+BLOCKED = config.RESULTS_DIR / "raw" / "exp_b_blocked.jsonl"
+
+
+def blocked() -> set[tuple]:
+    """안전 필터에 막힌 작업. 재전송하지 않고 실험에서 제외한다(CLAUDE.md 9장)."""
+    if not BLOCKED.exists():
+        return set()
+    import json
+
+    return {tuple(json.loads(line)["task"]) for line in BLOCKED.read_text(encoding="utf-8").splitlines()}
+
+
 def done(task: tuple) -> bool:
+    if task in blocked():
+        return True
     kind, cond, week, rep = task
+    if kind == "combined":
+        return pipeline.combined_path().exists()
     return report_done(week, rep) if kind == "report" else pipeline.raw_path(cond, week, rep).exists()
 
 
 def calls_needed(task: tuple) -> int:
     kind = task[0]
-    return 2 if kind == "report" else 1  # 리포트 + (조건부) 체크리스트
+    return 2 if kind in ("report", "combined") else 1  # 리포트 + (조건부) 체크리스트
 
 
 def run(task: tuple) -> None:
     kind, cond, week, rep = task
     if kind == "report":
         pipeline.run_week_report(week, rep)
+    elif kind == "combined":
+        pipeline.run_combined_report()
     else:
         pipeline.run_scoring(cond, week, rep)
 
@@ -73,8 +92,13 @@ def today(reserve: int = 0) -> None:
             break
         except ValueError as error:
             print(f"  실패(형식 오류 재시도 초과), 건너뜀 {task}: {str(error)[:150]}", flush=True)
-        except llm.ContentBlocked:
-            print(f"  안전 필터 차단, 건너뜀 {task}", flush=True)
+        except llm.ContentBlocked as error:
+            import json
+
+            BLOCKED.parent.mkdir(parents=True, exist_ok=True)
+            with BLOCKED.open("a", encoding="utf-8") as file:
+                file.write(json.dumps({"task": list(task), "message": str(error)[:300]}, ensure_ascii=False) + "\n")
+            print(f"  안전 필터 차단, 재전송하지 않고 제외 {task}", flush=True)
     status()
 
 

@@ -25,7 +25,7 @@ from moru import config
 
 T = TypeVar("T", bound=BaseModel)
 PACIFIC = ZoneInfo("America/Los_Angeles")  # 일일 한도는 태평양 시간 자정에 초기화된다
-BACKOFF_SECONDS = (60, 180)  # 실패한 요청도 일일 한도를 쓰는 것으로 보여 적게 재시도한다
+BACKOFF_SECONDS = (120, 300)  # 2026-11-08 간격 확대.  # 실패한 요청도 일일 한도를 쓰는 것으로 보여 적게 재시도한다
 RETRYABLE = {None, 429, 500, 502, 503, 504}  # None은 네트워크 오류
 API_ERRORS = (errors.APIError, compat_errors.APIError, httpx.HTTPError)
 REQUEST_TIMEOUT_MS = 180_000

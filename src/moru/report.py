@@ -56,27 +56,36 @@ def report_agent(prompt: str, repeat: int = 0) -> ReportOutput:
     return llm.generate(prompt, schema=ReportOutput, repeat=repeat, tag="report")
 
 
-def checklist_agent(prompt: str, item_ids: list[str], repeat: int = 0) -> ChecklistOutput:
+def checklist_agent(prompt: str, domains: list[str], repeat: int = 0) -> ChecklistOutput:
     def check(result: ChecklistOutput) -> None:
-        if sorted(e.item_id for e in result.entries) != sorted(item_ids):
-            raise ValueError("체크리스트 문항이 맞지 않습니다")
+        if sorted(d.domain for d in result.domains) != sorted(domains):
+            raise ValueError("체크리스트 영역이 맞지 않습니다")
+        if any(not 2 <= len(d.behaviors) <= 3 for d in result.domains):
+            raise ValueError("영역마다 행동 2~3개가 필요합니다")
     return llm.generate(prompt, schema=ChecklistOutput, check=check, repeat=repeat, tag="checklist")
 
 
 def to_markdown(week: dict) -> str:
-    lines = [f"# MORU 주간 리포트 ({week['start']} ~ {week['end']}, 생후 {week['age_months']}개월)", "",
+    title = "기간 리포트" if week.get("combined") else "주간 리포트"
+    lines = [f"# MORU {title} ({week['start']} ~ {week['end']}, 생후 {week['age_months']}개월)", "",
              "> 참고 평가값이며 공식 K-DST 결과나 진단이 아닙니다.", "", "## 영역별 참고 평가값", "",
              "| 영역 | 상태 | 참고 평가값 | 채점/보류 |", "|---|---|---|---|"]
     for d in week["domains"]:
         value = f"{d['total']}/{d['max_scored']}" if d["status"] == "평가" else "-"
         lines.append(f"| {DOMAIN_KO[d['domain']]} | {d['status']} | {value} | {d['scored']}/{d['abstained']} |")
-    lines += ["", "## 이전 주 대비 변화", ""] + ([f"- {c}" for c in week["changes"]] or ["- 이전 주 결과 없음"])
+    heading = "기간 안의 주간 변화(1주차 → 2주차)" if week.get("combined") else "이전 주 대비 변화"
+    lines += ["", f"## {heading}", ""] + ([f"- {c}" for c in week["changes"]] or ["- 변화 없음 또는 이전 주 결과 없음"])
     if week.get("report"):
         lines += ["", "## 종합 소견", "", week["report"]["summary"], ""]
         lines += [f"- **{DOMAIN_KO[n['domain']]}**: {n['note']}" for n in week["report"]["domain_notes"]]
     if week.get("checklist"):
         lines += ["", "## 다음 주 관찰 체크리스트", ""]
-        lines += [f"- [ ] ({e['item_id']}) {e['observe']} — 놀이: {e['play']}" for e in week["checklist"]["entries"]]
+        if "domains" in week["checklist"]:
+            for d in week["checklist"]["domains"]:
+                lines += [f"**{DOMAIN_KO[d['domain']]}**"]
+                lines += [f"- [ ] {b['observe']} — 놀이: {b['play']}" for b in d["behaviors"]]
+        else:  # 2026-11-07 형식(문항별)
+            lines += [f"- [ ] ({e['item_id']}) {e['observe']} — 놀이: {e['play']}" for e in week["checklist"]["entries"]]
     if week.get("handoffs"):
         lines += ["", "## 조율 기록", ""] + [f"- {h}" for h in week["handoffs"]]
     return "\n".join(lines) + "\n"

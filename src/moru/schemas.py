@@ -137,13 +137,17 @@ class ReportOutput(BaseModel):
     domain_notes: list[DomainNote]
 
 
-class ChecklistEntry(BaseModel):
-    item_id: str
-    observe: str = Field(description="이번 주에 관찰해 볼 행동 한 문장")
-    play: str = Field(description="그 행동을 자연스럽게 볼 수 있는 놀이 방법 한 문장")
+class ChecklistBehavior(BaseModel):
+    observe: str = Field(description="집에서 관찰해 볼 대표 행동 한 문장(검사 문항을 그대로 옮기지 않음)")
+    play: str = Field(description="그 행동을 자연스럽게 볼 수 있는 놀이 한 문장")
+
+
+class ChecklistDomain(BaseModel):
+    domain: Domain
+    behaviors: list[ChecklistBehavior] = Field(description="대표 관찰 행동 2~3개")
 
 
 class ChecklistOutput(BaseModel):
-    """체크리스트 에이전트의 출력."""
+    """체크리스트 에이전트의 출력. 정보 부족 영역마다 대표 관찰 행동 2~3개(2026-11-08 축약)."""
 
-    entries: list[ChecklistEntry]
+    domains: list[ChecklistDomain]

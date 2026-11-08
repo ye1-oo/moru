@@ -74,6 +74,11 @@ def metrics(table: pd.DataFrame) -> dict:
         "출처 정확도": _ratio(found["source_match"].fillna(False).astype(bool).sum(), len(found)),
         "점수-근거 불일치": _ratio(table["inconsistent"].sum(), len(table)),
     }
+    # 분모(문항 수). '차이 없음' 판정에 쓴다.
+    out.update({"n:정확 일치": len(both), "n:점수 재현율": len(gold_scored), "n:판단 보류 재현율": len(gold_abstain),
+                "n:판단 보류 정밀도": len(pred_abstain), "n:환각 비율": len(gold_abstain),
+                "n:근거 추적 정확도": len(pred_scored), "n:출처 정확도": len(found), "n:점수-근거 불일치": len(table),
+                "n:±1 일치": len(both)})
     retrieved = table["retrieved_gold"].dropna()
     if len(retrieved):
         out["검색 재현율"] = _ratio(sum(r[0] for r in retrieved), sum(r[1] for r in retrieved))

@@ -140,17 +140,21 @@ def report_context(age_months: int, start: str, end: str, domains: list[dict],
 
 
 CHECKLIST_ROLE = """당신은 부모에게 다음 주에 관찰해 볼 행동을 제안하는 체크리스트 담당입니다.
-아래 문항은 이번 주 기록에서 근거를 찾지 못한(판단 보류) 문항입니다.
-문항마다 집에서 관찰할 행동 한 문장(observe)과 그 행동을 자연스럽게 볼 수 있는 놀이 한 문장(play)을 씁니다.
-평가하거나 걱정을 주는 표현은 쓰지 않습니다."""
+아래 영역은 기록이 부족해 '정보 부족'으로 표시된 영역이고, 각 영역에 근거를 찾지 못한 문항 번호가 있습니다.
+규칙:
+- 영역마다 집에서 관찰해 볼 대표 행동을 2~3개만 고릅니다. 문항을 하나씩 다루지 않습니다.
+- 검사 문항의 문장을 그대로 옮기거나 문항별로 풀어쓰지 말고, 일상 언어로 묶어서 씁니다.
+- 각 행동에 그 행동을 자연스럽게 볼 수 있는 놀이 한 문장을 붙입니다.
+- 평가하거나 걱정을 주는 표현은 쓰지 않습니다."""
 
 
 def checklist_context(age_months: int, items: list[KdstItem]) -> str:
-    lines = [CHECKLIST_ROLE, "", f"[아이 정보] 생후 {age_months}개월", "", "## 판단 보류 문항"]
+    """판단 보류 문항 + 월령만 넣는다(검색 없음). 문항 원문은 참고용으로 주되 옮겨 쓰지 않게 한다."""
+    lines = [CHECKLIST_ROLE, "", f"[아이 정보] 생후 {age_months}개월", "", "## 정보 부족 영역과 판단 보류 문항(참고용)"]
     for domain in dict.fromkeys(item.domain for item in items):
-        lines.append(f"### {DOMAIN_KO[domain]}")
-        lines.extend(f"- {item.item_id}: {item.text}" for item in items if item.domain == domain)
-    lines += ["", "출력: entries 배열에 문항마다 하나씩 JSON으로 답합니다."]
+        lines.append(f"### {DOMAIN_KO[domain]} ({domain})")
+        lines.extend(f"- {item.text}" for item in items if item.domain == domain)
+    lines += ["", "출력: domains 배열에 영역마다 domain(영문 코드)과 behaviors 2~3개를 JSON으로 답합니다."]
     return "\n".join(lines)
 
 

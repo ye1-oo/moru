@@ -18,12 +18,49 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from moru import config, context, evaluate, pipeline  # noqa: E402
 
 RESULTS = config.RESULTS_DIR
+# 첫 조건이 비교 기준이다. ④ 문항별 vs 일괄 검색은 2026-11-08 "향후 실험 계획"으로 돌렸다.
 EXPERIMENTS = {
-    "① 단일 vs 멀티 에이전트": ["single", "multi"],
+    "① 단일 vs 멀티 에이전트": ["multi", "single"],
     "② 컨텍스트 요소별 제거": ["multi", "no_date", "no_source", "no_abstain", "none"],
-    "③ 일기 / 캡션 / 둘 다": ["parent_only", "caption_only", "multi"],
-    "④ 문항별 vs 일괄 검색": ["multi", "batched"],
+    "③ 일기 / 캡션 / 둘 다": ["multi", "parent_only", "caption_only"],
 }
+MAIN = ["환각 비율", "근거 추적 정확도"]          # 주 지표
+AUX = ["정확 일치", "점수 재현율", "출처 정확도"]  # 보조 지표(±1 일치는 쓰지 않음)
+NOTES = {
+    "① 단일 vs 멀티 에이전트": [
+        "단일 에이전트는 캡션 대신 원본 영상을 직접 봤다. 정답은 일기와 캡션 텍스트로 만들었으므로, 단일 에이전트가 영상에서 "
+        "실제로 본 행동(캡션에 없는 행동)에 점수를 주면 환각으로 집계된다. 단일 에이전트의 환각 비율은 과대 추정일 수 있다.",
+        "단일 에이전트가 영상 근거로 쓴 문장은 자기 말로 쓴 묘사라 실제 기록에서 찾을 수 없다. 근거 추적 정확도가 낮은 것은 "
+        "점수가 틀렸다는 뜻이 아니라 근거를 기록으로 되짚을 수 없다는 뜻이다.",
+    ],
+    "② 컨텍스트 요소별 제거": [
+        "출처 태그를 빼도 출처 정확도가 유지되는 것은 캡션의 문체(\"~합니다\")로 출처를 추정할 수 있었기 때문으로 보인다.",
+        "판단 보류 규칙을 빼도 환각 비율이 늘지 않았다. '기록에 적힌 내용만 근거로 삼는다'는 기본 규칙과 null을 허용하는 "
+        "출력 스키마가 남아 있기 때문으로 보인다. 이 데이터에서는 판단 보류 규칙 문장 자체의 효과를 확인하지 못했다.",
+        "근거 추적 정확도는 날짜 태그가 없으면 크게 떨어진다. 모델이 근거 날짜를 평가 기간 첫날로 적거나 비워 두었다.",
+    ],
+    "③ 일기 / 캡션 / 둘 다": [
+        "'일기만'은 점수 재현율이 낮다. 캡션에만 있는 행동(예: 컵으로 혼자 마시기, 숟가락 사용)을 근거로 쓸 수 없기 때문이다.",
+        "'캡션만' 1주차는 텍스트 입력이 안전 필터(prohibited_content)에 막혀 재전송하지 않고 제외했다. 2주차 1회만 집계했다.",
+    ],
+}
+
+
+def _cell(mean, std, runs):
+    return f"{mean:.2f}" + (f" ± {std:.2f}" if runs > 1 else "")
+
+
+def no_difference(ref: pd.DataFrame, cond: pd.DataFrame, metric: str) -> bool:
+    """기준 조건과의 차이가 표본 대비 작은가.
+    (1) 평균 차이가 실행당 문항 1개 미만에 해당하거나 (2) 실행이 2회 이상이고 차이가 두 조건 표준편차 중 큰 값 이하."""
+    a, b = ref[metric].dropna(), cond[metric].dropna()
+    if a.empty or b.empty:
+        return False
+    delta = abs(b.mean() - a.mean())
+    per_run = pd.concat([ref[f"n:{metric}"], cond[f"n:{metric}"]]).mean()
+    if delta * per_run < 1:
+        return True
+    return len(a) > 1 and len(b) > 1 and delta <= max(a.std(ddof=0), b.std(ddof=0))
 CASE_KO = {"parent": "부모 서술", "caption_only": "캡션에만 있음", "conflict": "서술-캡션 불일치",
            "ambiguous_time": "시점 모호 표현", "both": "서술+캡션 일치", "bait": "유혹 문항(근거 없음)",
            "no_evidence": "근거 없음"}
@@ -40,25 +77,41 @@ def run_table(results, gold) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def summary_tables(results, gold) -> str:
+def summary_tables(runs: pd.DataFrame) -> str:
     md = ["# 실험 B 결과", "",
-          f"가상 아이 1명(생후 18개월), 2주(주당 일기 7편, 문항 48개), 모델 {config.GEMINI_MODEL}, temperature 0.",
-          "값은 실행(주×반복)별 지표의 평균 ± 표준편차. '문항 판단 수' = 48 × 실행 수.", ""]
-    all_rows = []
+          f"가상 아이 1명(생후 18개월), 2주(주당 가상 일기 7편, 18~19개월 검사지 48문항), 모델 {config.GEMINI_MODEL}, temperature 0.",
+          "값은 실행(주×반복)별 지표의 평균 ± 표준편차. 문항 판단 수 = 48 × 실행 수.",
+          "**주 지표: 환각 비율(낮을수록 좋음), 근거 추적 정확도(높을수록 좋음).** 정확 일치·점수 재현율·출처 정확도는 보조 지표.",
+          "'(차이 없음)': 첫 행(기준)과의 평균 차이가 실행당 문항 1개 미만이거나, 반복이 있을 때 표준편차 이하인 경우.",
+          "정답 라벨은 2026-11-08에 고정했다(이전 수정 1회: 첫 실행 후 fine_motor_05 누락 보완).", ""]
+    rows = []
     for title, conds in EXPERIMENTS.items():
-        subset = [r for r in results if r["condition"] in conds]
-        if not subset:
-            md += [f"## {title}", "", "(아직 실행하지 않음)", ""]
+        present = [c for c in conds if c in set(runs["condition"])]
+        md += [f"## {title}", ""]
+        if len(present) < 2:
+            md += ["(아직 실행하지 않음)", ""]
             continue
-        table = evaluate.summarize(subset, gold)
-        table["condition"] = pd.Categorical(table["condition"], conds, ordered=True)
-        table = table.sort_values("condition")
-        table.insert(0, "실험", title)
-        all_rows.append(table)
-        cols = ["조건", "주 수", "반복 수", "실행 수", "문항 판단 수"] + [m for m in METRICS if m in table.columns]
-        md += [f"## {title}", "", table[cols].to_markdown(index=False), ""]
-    if all_rows:
-        pd.concat(all_rows).to_csv(RESULTS / "exp_b_summary.csv", index=False, encoding="utf-8-sig")
+        ref = runs[runs["condition"] == present[0]]
+        table = []
+        for cond in present:
+            sub = runs[runs["condition"] == cond]
+            row = {"조건": pipeline.CONDITIONS[cond].label, "주 수": sub["week"].nunique(),
+                   "반복 수": sub["repeat"].nunique(), "실행 수": len(sub), "문항 판단 수": int(sub["items"].sum())}
+            for metric in MAIN + AUX:
+                value = _cell(sub[metric].mean(), sub[metric].std(ddof=0), len(sub))
+                if cond == present[0]:
+                    value += " (기준)" if metric in MAIN else ""
+                elif no_difference(ref, sub, metric):
+                    value += " (차이 없음)"
+                row[("주 · " if metric in MAIN else "보조 · ") + metric] = value
+            table.append(row)
+            rows.append({"실험": title, "condition": cond, **row})
+        md += [pd.DataFrame(table).to_markdown(index=False), ""]
+        md += [f"- {note}" for note in NOTES.get(title, [])] + [""]
+    md += ["## 향후 실험 계획", "",
+           "- ④ 문항별 검색 vs 일괄 검색: 주당 기록이 7편이라 top-3 검색이 대부분의 기록을 가져와 차이가 드러나기 어렵고, "
+           "무료 호출 한도를 ①② 반복에 쓰기 위해 이번에는 하지 않았다(2026-11-08). 기록이 많은 장기 데이터에서 비교할 계획이다.", ""]
+    pd.DataFrame(rows).to_csv(RESULTS / "exp_b_summary.csv", index=False, encoding="utf-8-sig")
     return "\n".join(md)
 
 
@@ -85,8 +138,8 @@ def figures(runs: pd.DataFrame) -> None:
     plt.rcParams["axes.unicode_minus"] = False
     out = RESULTS / "figures"
     out.mkdir(parents=True, exist_ok=True)
-    shown = ["정확 일치", "±1 일치", "환각 비율", "판단 보류 재현율", "근거 추적 정확도", "출처 정확도"]
-    for title, conds in EXPERIMENTS.items():
+    shown = MAIN + ["정확 일치"]
+    for number, (title, conds) in enumerate(EXPERIMENTS.items(), 1):
         sub = runs[runs["condition"].isin(conds)]
         if sub["condition"].nunique() < 2:
             continue
@@ -101,10 +154,10 @@ def figures(runs: pd.DataFrame) -> None:
         ax.set_xticks([j + width * (len(mean) - 1) / 2 for j in range(len(shown))], shown)
         ax.set_ylim(0, 1.05)
         n = sub.groupby("condition").size().min()
-        ax.set_title(f"{title} (조건당 실행 {n}회 이상, 실행당 48문항)")
+        ax.set_title(f"{title} (조건당 실행 {n}회 이상, 실행당 48문항. 환각 비율은 낮을수록 좋음)")
         ax.legend(fontsize=8, ncols=min(5, len(mean)))
         fig.tight_layout()
-        fig.savefig(out / f"exp_b_{title[0]}.png", dpi=200)
+        fig.savefig(out / f"exp_b_{number}.png", dpi=200)
         plt.close(fig)
 
 
@@ -136,20 +189,22 @@ def item_fragment(prompt: str, item_id: str) -> str:
 def cases(results, gold, limit: int = 5) -> str:
     items = pipeline.load_items()
     by_key = {(r["condition"], r["week"]): r for r in results if r["repeat"] == 0}
-    preferred = ["conflict", "caption_only", "ambiguous_time", "bait", "parent"]
+    # 사례 유형마다 조건 간 출력(점수, 출처, 날짜)이 가장 많이 갈린 문항을 하나씩 고른다.
+    preferred = ["conflict", "ambiguous_time", "caption_only", "bait", "parent"]
     picks = []
     for case in preferred:
+        best = None
         for _, g in gold[gold["case"] == case].iterrows():
             outs = {}
             for cond in pipeline.CONDITIONS:
                 r = by_key.get((cond, g["week"]))
                 if r:
-                    s = next(s for s in r["scores"] if s["item_id"] == g["item_id"])
-                    outs[cond] = s
-            distinct = {(o["score"], o["source"], o["evidence_date"]) for o in outs.values()}
-            if len(outs) >= 2 and len(distinct) >= 2:
-                picks.append((g, outs))
-                break
+                    outs[cond] = next(s for s in r["scores"] if s["item_id"] == g["item_id"])
+            distinct = len({(o["score"], o["source"], o["evidence_date"]) for o in outs.values()})
+            if len(outs) >= 2 and distinct >= 2 and (best is None or distinct > best[0]):
+                best = (distinct, g, outs)
+        if best:
+            picks.append(best[1:])
         if len(picks) >= limit:
             break
     md = ["# 같은 입력, 다른 구조·컨텍스트, 다른 출력", "",
@@ -176,7 +231,7 @@ def main() -> None:
         return
     runs = run_table(results, gold)
     runs.to_csv(RESULTS / "exp_b_runs.csv", index=False, encoding="utf-8-sig")
-    (RESULTS / "tables.md").write_text(summary_tables(results, gold), encoding="utf-8")
+    (RESULTS / "tables.md").write_text(summary_tables(runs), encoding="utf-8")
     by_case(results, gold).to_csv(RESULTS / "exp_b_by_case.csv", index=False, encoding="utf-8-sig")
     figures(runs)
     (RESULTS / "examples").mkdir(exist_ok=True)

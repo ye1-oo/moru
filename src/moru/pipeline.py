@@ -154,7 +154,7 @@ def run_week_report(week: int, repeat: int = 0) -> dict:
         targets = [i for i in items if i.domain in insufficient and by_id[i.item_id].score is None]
         prompt = context.checklist_context(18, targets)
         context.save(prompt, CONTEXTS / f"checklist_w{week}.txt")
-        week_out["checklist"] = report.checklist_agent(prompt, [i.item_id for i in targets], repeat).model_dump()
+        week_out["checklist"] = report.checklist_agent(prompt, sorted(insufficient), repeat).model_dump()
         week_out["handoffs"].append(f"체크리스트 에이전트 호출: 정보 부족 영역 {sorted(insufficient)}")
 
     # 조율 규칙 2: 0~1점 문항이 있는 영역이 2주 연속 → 상담 요약 에이전트(인터페이스만)
@@ -169,3 +169,47 @@ def run_week_report(week: int, repeat: int = 0) -> dict:
     (out / f"{CHILD}_w{week}_r{repeat}.json").write_text(json.dumps(week_out, ensure_ascii=False, indent=1), encoding="utf-8")
     (out / f"{CHILD}_w{week}_r{repeat}.md").write_text(report.to_markdown(week_out), encoding="utf-8")
     return week_out
+
+
+def combined_path() -> Path:
+    return config.RESULTS_DIR / "raw" / "reports" / f"{CHILD}_combined.json"
+
+
+def _scores(name: str, week: int, repeat: int = 0) -> list[ItemScore]:
+    data = json.loads(raw_path(name, week, repeat).read_text(encoding="utf-8"))
+    return [ItemScore(**{k: v for k, v in s.items() if k != "flags"}) for s in data["scores"]]
+
+
+def run_combined_report() -> dict:
+    """보고서·데모용: 2주 기록을 합친 기간 리포트(LLM 2회: 리포트 + 체크리스트).
+
+    새로 채점하지 않고 멀티 에이전트 1·2주차 채점(반복 0)을 합친다. 문항마다 가장 최근 주의
+    점수를 쓰고, 그 주가 판단 보류면 이전 주 점수를 쓴다. 근거 날짜는 그대로 남는다.
+    """
+    items = load_items()
+    first, second = _scores("multi", 1), _scores("multi", 2)
+    by_first = {s.item_id: s for s in first}
+    merged = [s if s.score is not None else by_first[s.item_id] for s in second]
+    domains = report.aggregate(items, merged)
+    start, end = WEEKS[1][0], WEEKS[2][1]
+    out = {"child_id": CHILD, "combined": True, "start": str(start), "end": str(end), "age_months": 18,
+           "domains": domains, "changes": report.changes(report.aggregate(items, second), report.aggregate(items, first)),
+           "handoffs": [], "scores": [s.model_dump() for s in merged]}
+    prompt = context.report_context(18, str(start), str(end), domains, out["changes"], report.highlights(merged, 10))
+    context.save(prompt, CONTEXTS / "report_combined.txt")
+    out["report"] = report.report_agent(prompt).model_dump()
+    insufficient = sorted({d["domain"] for d in domains if d["status"] == "정보 부족"})
+    if insufficient:
+        by_id = {s.item_id: s for s in merged}
+        targets = [i for i in items if i.domain in insufficient and by_id[i.item_id].score is None]
+        prompt = context.checklist_context(18, targets)
+        context.save(prompt, CONTEXTS / "checklist_combined.txt")
+        out["checklist"] = report.checklist_agent(prompt, insufficient).model_dump()
+        out["handoffs"].append(f"체크리스트 에이전트 호출: 정보 부족 영역 {insufficient}")
+    lasting = [d["domain"] for d, p in zip(report.aggregate(items, second), report.aggregate(items, first))
+               if d["concern"] and p["concern"]]
+    out["handoffs"] += [f"상담 요약 에이전트 호출 대상(미구현): {d} 2주 연속 관찰 필요" for d in lasting]
+    path = combined_path()
+    path.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+    path.with_suffix(".md").write_text(report.to_markdown(out), encoding="utf-8")
+    return out
