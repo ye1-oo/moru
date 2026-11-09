@@ -346,3 +346,33 @@ pre.code { margin: 0; background: #1F2A2C; color: #E9EEE9; border-radius: 12px; 
   .date-badge { display: flex; gap: 8px; align-items: baseline; padding: 4px 10px; width: fit-content; }
   .date-badge b { font-size: 15px; }
 }
+
+/* ---------- phone: bottom tab bar, one card per row ---------- */
+.tabbar, .sheet { display: none; }
+@media (max-width: 640px) {
+  .side { padding: 10px 16px; }
+  .nav { display: none; }
+  .child-chip { display: flex; margin-left: auto; padding: 4px 10px 4px 4px; border-radius: 99px; }
+  .child-chip .avatar { width: 28px; height: 28px; font-size: 13px; }
+  .child-chip b { font-size: 13px; line-height: 1.2; }
+  .child-chip span { font-size: 11px; }
+  .main { padding: 18px 16px calc(84px + env(safe-area-inset-bottom)); }
+  .tabbar { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; background: rgba(255, 255, 255, .97); border-top: 1px solid var(--line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); backdrop-filter: blur(8px); }
+  .tabbar a, .tabbar button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0; border: 0; background: none; text-decoration: none; color: var(--muted); font-size: 11px; font-weight: 600; border-radius: 10px; }
+  .tabbar svg { width: 21px; height: 21px; }
+  .tabbar .on { color: var(--primary); }
+  .sheet { position: fixed; left: 12px; right: 12px; bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 36; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.15); padding: 8px; display: grid; gap: 2px; }
+  .sheet[hidden] { display: none; }
+  .sheet a { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 10px; text-decoration: none; font-size: 15px; }
+  .sheet a.on { background: var(--primary-2); color: var(--primary); font-weight: 600; }
+  .sheet svg { width: 18px; height: 18px; }
+  .stats, .mini-dom, .grid-3, .grid-2 { grid-template-columns: minmax(0, 1fr) !important; }
+  .mini-dom .card { display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
+  .mini-dom .card b { flex: 1; font-size: 14px; }
+  .mini-dom .v { order: 2; font-size: 18px; }
+  .mini-dom .tiny { order: 1; }
+  .stat { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 16px; }
+  .stat .v { font-size: 20px; }
+  .chat-wrap { height: calc(100dvh - 250px); min-height: 440px; }
+  .toast { bottom: calc(84px + env(safe-area-inset-bottom)); }
+}

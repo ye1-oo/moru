@@ -24,7 +24,7 @@
     const scored = its.filter((i) => R[i.id].score !== null);
     const sum = scored.reduce((a, i) => a + R[i.id].score, 0);
     const hold = its.length - scored.length;
-    return { its, scored: scored.length, hold, total: its.length, sum, avg: scored.length ? sum / scored.length : null,
+    return { its, scored: scored.length, hold, total: its.length, sum, max: its.length * 3,
       status: hold / its.length >= 0.5 ? "정보 부족" : "평가" };
   }
   const holdItems = D.items.filter((i) => R[i.id].score === null);
@@ -199,7 +199,7 @@
     $("#main").innerHTML = `${head("2026년 11월 2일 월요일", `안녕하세요, ${D.child.nickname} 보호자님`, "")}
       <section class="card home-hero">
         <div><h2>${D.period.label} 발달 리포트가 도착했어요</h2>
-          <p>기록 ${D.diaries.length}편에서 관찰 항목 ${D.items.length - holdItems.length}개의 단서를 찾았어요. ${insufficient.map((d) => d.name).join(", ")} 영역은 기록이 더 필요해요.</p></div>
+          <p>기록 ${D.diaries.length}편에서 관찰 항목 ${D.items.length}개 중 ${D.items.length - holdItems.length}개의 단서를 찾았어요. ${insufficient.length ? `${insufficient.map((d) => d.name).join(", ")} 영역은 기록이 더 필요해요.` : `6개 영역 모두 참고 평가값이 나왔고, 판단 보류 ${holdItems.length}개는 체크리스트로 안내해 드려요.`}</p></div>
         <a class="btn" href="#/report">${icon("chart")} 리포트 보기</a>
       </section>
       <div class="section-title">바로가기</div>
@@ -213,7 +213,7 @@
       </div>
       <div class="section-title">이번 주 영역별 참고 평가값 <a class="btn ghost small" href="#/report">자세히</a></div>
       <div class="mini-dom">${D.domains.map((d) => { const s = summary(d.id); return `<a class="card" href="#/report" style="text-decoration:none"><b style="color:${d.color}">${d.short}</b>
-        <div class="v">${s.status === "정보 부족" ? '<span class="tag warn">정보 부족</span>' : s.avg.toFixed(1)}</div><span class="tiny muted">${s.scored}/${s.total} 항목 평가</span></a>`; }).join("")}</div>
+        <div class="v">${s.status === "정보 부족" ? '<span class="tag warn">정보 부족</span>' : `${s.sum}<small class="muted" style="font-size:13px;font-weight:500"> / ${s.max}</small>`}</div><span class="tiny muted">${s.scored}/${s.total} 항목 평가</span></a>`; }).join("")}</div>
       <div class="section-title">최근 기록 <a class="btn ghost small" href="#/diary">전체 보기</a></div>
       <div>${latest.map(diaryListItem).join("")}</div>${foot}`;
   }
@@ -267,15 +267,15 @@
   function viewReport() {
     const cards = D.domains.map((d) => {
       const s = summary(d.id), p = D.prevSummary[d.id];
-      const prevInsuff = (4 - p.scored) / 4 >= 0.5;
+      const prevInsuff = (s.total - p.scored) / s.total >= 0.5;
       let change = "";
       if (s.status === "정보 부족") change = `<span class="tag warn">정보 부족 · 보류 ${s.hold}/${s.total}</span>`;
       else if (prevInsuff) change = `<span class="tag ok">지난주 정보 부족 → 평가</span>`;
-      else { const diff = s.avg - p.avg; change = `<span class="tag ${Math.abs(diff) < 0.25 ? "plain" : "ok"}">지난주 ${p.avg.toFixed(1)} → ${s.avg.toFixed(1)}</span>`; }
+      else { const diff = s.sum - p.sum; change = `<span class="tag ${diff > 0 ? "ok" : "plain"}">지난주 ${p.sum} → ${s.sum} (${diff > 0 ? "+" : ""}${diff})</span>`; }
       return `<article class="card dom-card">
         <div class="head"><span class="dot" style="width:10px;height:10px;border-radius:3px;background:${d.color}"></span><h3>${d.name}</h3><span class="grow"></span>${change}</div>
-        <div class="val"><b>${s.avg === null ? "-" : s.avg.toFixed(2)}</b><span class="muted small">/ 3 · ${s.scored}개 항목 평가${s.status === "정보 부족" ? " (참고만)" : ""}</span></div>
-        <div class="meter"><b style="width:${s.avg === null ? 0 : (s.avg / 3) * 100}%;background:${s.status === "정보 부족" ? "#C9BFD9" : d.color}"></b>${prevInsuff ? "" : `<span class="prev" style="left:${(p.avg / 3) * 100}%" title="지난주"></span>`}</div>
+        <div class="val"><b>${s.sum}</b><span class="muted small">/ ${s.max} · ${s.scored}/${s.total} 항목 평가${s.hold ? ` · 판단 보류 ${s.hold}` : ""}</span></div>
+        <div class="meter"><b style="width:${(s.sum / s.max) * 100}%;background:${s.status === "정보 부족" ? "#C9BFD9" : d.color}"></b>${prevInsuff ? "" : `<span class="prev" style="left:${(p.sum / s.max) * 100}%" title="지난주 ${p.sum}"></span>`}</div>
         <div class="score-list">${s.its.map((i) => { const r = R[i.id]; return `<button class="score-row" data-ev="${i.id}"><span class="t">${esc(i.text)}</span>${r.score === null ? '<span class="score-pill hold">정보 없음</span>' : `<span class="score-pill">${r.score}점</span>`}</button>`; }).join("")}</div>
       </article>`;
     }).join("");
@@ -286,10 +286,10 @@
         ${D.report.opinion.map((p) => `<p>${esc(p)}</p>`).join("")}
         <div class="notice" style="margin-top:14px">${icon("info")}<div>${esc(D.report.nextWeek)}</div></div>
       </section>
-      <div class="row" style="margin:18px 0 12px;justify-content:space-between"><h2 style="font-size:17px">영역별 참고 평가값</h2>
+      <div class="row" id="domains" style="margin:18px 0 12px;justify-content:space-between;scroll-margin-top:72px"><h2 style="font-size:17px">영역별 참고 평가값</h2>
         <div class="legend"><span><i style="background:var(--primary)"></i>이번 주</span><span><i style="width:2px;height:12px;background:var(--ink);opacity:.45"></i>지난주</span></div></div>
       <div class="grid-3" style="align-items:start">${cards}</div>
-      <div class="notice warm" style="margin-top:18px">${icon("info")}<div>판단 보류(정보 없음) 항목이 절반 이상인 영역은 <b>정보 부족</b>으로 표시해요. 기록이 부족하다는 뜻이지 발달이 늦다는 뜻이 아니에요. 점수는 참고 평가값이며 공식 K-DST 결과나 진단이 아니에요.</div></div>${foot}`;
+      <div class="notice warm" style="margin-top:18px">${icon("info")}<div>영역 점수는 항목당 0~3점을 더한 <b>합계 / 24</b>예요(영역당 8개 항목). 판단 보류 항목은 점수에 넣지 않고, 판단 보류가 절반 이상인 영역은 <b>정보 부족</b>으로 표시해요. 기록이 부족하다는 뜻이지 발달이 늦다는 뜻이 아니에요. 점수는 참고 평가값이며 공식 K-DST 결과나 진단이 아니에요.</div></div>${foot}`;
     $$("[data-ev]").forEach((b) => b.addEventListener("click", () => openEvidence(b.dataset.ev)));
   }
 
@@ -299,7 +299,7 @@
     const all = D.checklist.flatMap((g) => g.behaviors.map((b) => b.item));
     const render = () => {
       const n = all.filter((id) => done[id]).length;
-      $("#main").innerHTML = `${head("이번 주에 살펴볼 것", "관찰 체크리스트", "기록에서 근거를 찾지 못한 항목을 바탕으로 만들었어요. 새로 검색하지 않고 판단 보류 항목과 월령만 사용해요.")}
+      $("#main").innerHTML = `${head("이번 주에 살펴볼 것", "관찰 체크리스트", `기록이 없어 판단을 보류한 항목 ${holdItems.length}개를 관찰 행동으로 바꿨어요. 새로 검색하지 않고 판단 보류 항목과 월령만 사용해요.`)}
         <div class="card pad" style="margin-bottom:16px"><div class="row" style="margin-bottom:8px"><b>${n} / ${all.length} 관찰함</b><span class="grow"></span><span class="tiny muted">관찰한 뒤 일기로 남기면 다음 리포트에 반영돼요</span></div>
           <div class="progress"><b style="width:${(n / all.length) * 100}%"></b></div></div>
         ${D.checklist.map((g) => { const d = dom[g.domain]; return `<section class="card check-dom">
@@ -318,7 +318,7 @@
 
   // ---------- 화면: AI 채팅 ----------
   const chatLog = [];
-  function viewChat() {
+  function viewChat(params) {
     $("#main").innerHTML = `${head("AI 채팅", "기록에게 물어보기", "아이의 기록만 근거로, 날짜와 출처를 밝혀 답해요. 기록에 없는 내용은 없다고 말해요.")}
       <section class="card chat-wrap">
         <div class="chat-log" id="log" aria-live="polite"></div>
@@ -338,16 +338,21 @@
       log.innerHTML = `<div class="msg bot">안녕하세요! ${D.child.nickname}의 ${md(D.prevPeriod.start)}~${md(D.period.end)} 기록 ${D.diaries.length + D.pastDiaries.length}편을 바탕으로 답해 드려요. 저는 진단을 하지 않고, 기록에 적힌 내용만 이야기해요.</div>` + chatLog.map(bubble).join("");
       log.scrollTop = log.scrollHeight;
     };
+    const answer = (text) => {
+      const hit = D.chat.find((c) => c.q === text) || D.chat.find((c) => c.keys.some((k) => text.includes(k)));
+      return hit ? { text: hit.a, cites: hit.cites, noev: hit.noev ?? !hit.cites.length, link: hit.link }
+        : { text: "이 데모에서는 아래 예시 질문에만 답할 수 있어요. 실제 서비스에서는 질문으로 기록을 검색한 뒤, 찾은 기록만 근거로 답하고 관련 기록이 없으면 없다고 말해요.", noev: true };
+    };
+    // 캡처용: #/chat?q=0,1 이면 예시 질문을 바로 채운다
+    if (params.get("q") && !chatLog.length) params.get("q").split(",").map(Number).filter((i) => D.chat[i]).forEach((i) => chatLog.push({ me: true, text: D.chat[i].q }, answer(D.chat[i].q)));
     const ask = (text) => {
       if (!text.trim()) return;
       chatLog.push({ me: true, text });
       draw();
       log.insertAdjacentHTML("beforeend", '<div class="msg bot" id="typing"><span class="typing"><i></i><i></i><i></i></span></div>');
       log.scrollTop = log.scrollHeight;
-      const hit = D.chat.find((c) => c.q === text) || D.chat.find((c) => c.keys.some((k) => text.includes(k)));
       setTimeout(() => {
-        chatLog.push(hit ? { text: hit.a, cites: hit.cites, noev: !hit.cites.length, link: hit.link }
-          : { text: "이 데모에서는 아래 예시 질문에만 답할 수 있어요. 실제 서비스에서는 질문으로 기록을 검색한 뒤, 찾은 기록만 근거로 답하고 관련 기록이 없으면 없다고 말해요.", noev: true });
+        chatLog.push(answer(text));
         draw();
       }, 750);
     };
@@ -366,8 +371,8 @@
           <p class="tiny muted" style="margin-bottom:12px">${esc(C.period)} · ${esc(C.trigger)}</p>
           <p style="font-size:14.5px">${esc(C.summary)}</p>
           <hr class="sep">
-          <h4 class="small muted" style="margin-bottom:8px">참고 평가값</h4>
-          <div class="score-list" style="margin-top:0">${C.scores.map((s) => `<button class="score-row" data-ev="${s.item}"><span class="t">${esc(item[s.item].text)}</span>${s.score === null ? '<span class="score-pill hold">정보 없음</span>' : `<span class="score-pill">${s.score}점 · ${md(s.date)}</span>`}</button>`).join("")}</div>
+          <h4 class="small muted" style="margin-bottom:8px">참고 평가값 · 합계 ${summary(C.domain).sum} / ${summary(C.domain).max}</h4>
+          <div class="score-list" style="margin-top:0">${C.scores.map((id) => { const r = R[id]; return `<button class="score-row" data-ev="${id}"><span class="t">${esc(item[id].text)}</span>${r.score === null ? '<span class="score-pill hold">정보 없음</span>' : `<span class="score-pill">${r.score}점 · ${md(r.date)}</span>`}</button>`; }).join("")}</div>
           <h4 class="small muted" style="margin:16px 0 8px">근거 기록</h4>
           <div class="stack">${C.observations.map((o) => `<div class="quote ${o.source}"><div class="src">${srcTag(o.source)}<span>${mdKo(o.date)} 기록</span></div>${esc(o.quote)}</div>`).join("")}</div>
           <h4 class="small muted" style="margin:16px 0 6px">상담에서 확인해 볼 점</h4>
@@ -378,9 +383,9 @@
           <section class="card pad">
             <h3 style="font-size:15px;margin-bottom:10px">함께 보낼 내용</h3>
             <div class="share-list">
-              <label><input type="checkbox" checked> 언어 영역 관찰 요약과 근거 기록 4개</label>
+              <label><input type="checkbox" checked> 언어 영역 관찰 요약과 근거 기록 ${C.observations.length}개</label>
               <label><input type="checkbox" checked> 최근 2주 영역별 참고 평가값</label>
-              <label><input type="checkbox"> 일기 원문 전체 (12편)</label>
+              <label><input type="checkbox"> 일기 원문 전체 (14편)</label>
               <label><input type="checkbox" disabled> 영상 원본 <span class="tiny muted">— 보내지 않아요</span></label>
             </div>
           </section>
@@ -418,7 +423,7 @@
             <div class="flow-row" style="--n:3">${box("report")}${box("checklist")}${box("counsel")}</div>
           </div>
           <div class="side-branch">${box("chat")}<div class="notice" style="font-size:12.5px">${icon("info")}<div>채팅·상담 요약은 채점과 <b>같은 검색 모듈</b>을 다시 써요.</div></div></div>
-          <p class="tiny muted" style="margin-top:14px">실제 파이프라인은 월령 검사지의 모든 문항(18~19개월: 6개 영역 48문항)을 쓰고, 이 데모는 영역당 4개 관찰 항목만 보여 줘요.</p>
+          <p class="tiny muted" style="margin-top:14px">데모의 관찰 항목 48개(영역당 8개)는 쉬운 말로 새로 쓴 설명이며 K-DST 문항 원문이 아니에요.</p>
         </section>
         <section class="card pad" id="detail">
           <div class="row" style="margin-bottom:12px"><h2 style="font-size:19px">${a.name}</h2><span class="grow"></span><span class="tag plain">${esc(a.when)}</span></div>
@@ -434,14 +439,14 @@
         </section>
       </div>
       <div class="grid-3" style="margin-top:16px">
-        <div class="card pad"><b>조율 규칙 ①</b><p class="small muted" style="margin-top:4px">판단 보류가 절반 이상인 '정보 부족' 영역이 있으면 → 체크리스트 에이전트</p><p class="small" style="margin-top:8px">이번 주: <b>${insufficient.map((d) => d.name).join(", ") || "없음"}</b> → 호출함</p></div>
+        <div class="card pad"><b>조율 규칙 ①</b><p class="small muted" style="margin-top:4px">판단 보류 항목이 있으면 → 체크리스트 에이전트 (판단 보류가 절반 이상인 '정보 부족' 영역은 우선 표시)</p><p class="small" style="margin-top:8px">이번 주: 정보 부족 영역 ${insufficient.length ? insufficient.map((d) => d.name).join(", ") : "없음"}, 판단 보류 <b>${holdItems.length}개</b> → 호출함</p></div>
         <div class="card pad"><b>조율 규칙 ②</b><p class="small muted" style="margin-top:4px">0~1점 문항이 있는 영역이 2주 연속이면 → 상담 요약 에이전트</p><p class="small" style="margin-top:8px">이번 주: 해당 없음 (상담 요약은 보호자 요청으로 생성)</p></div>
         <div class="card pad"><b>판단 보류 원칙</b><p class="small muted" style="margin-top:4px">직접 근거가 없으면 점수를 주지 않아요. 채점·채팅·상담 요약이 같은 원칙을 따라요.</p><p class="small" style="margin-top:8px">이번 주: <b>${holdItems.length}개</b> 판단 보류</p></div>
       </div>${foot}`;
     $$("[data-a]").forEach((b) => b.addEventListener("click", () => { location.hash = `#/agents?a=${b.dataset.a}`; }));
     $("#run").addEventListener("click", () => {
       const order = ["caption", "index", "retrieve", "score", "aggregate", "report", "checklist"];
-      const msgs = ["영상 7개 → 행동 묘사 7개", "기록 7편 → 청크 7개", `관찰 항목 ${D.items.length}개 × top-3 검색`, `${D.items.length - holdItems.length}개 채점 · ${holdItems.length}개 판단 보류`, `${insufficient.map((d) => d.short).join(", ")} 정보 부족 → 체크리스트 호출`, "종합 소견 작성", "관찰 행동 생성"];
+      const msgs = ["영상 7개 → 행동 묘사 7개", "기록 7편 → 청크 7개", `관찰 항목 ${D.items.length}개 × top-3 검색`, `${D.items.length - holdItems.length}개 채점 · ${holdItems.length}개 판단 보류`, `판단 보류 ${holdItems.length}개 → 체크리스트 호출`, "종합 소견 작성", "관찰 행동 생성"];
       $$(".agent").forEach((x) => x.classList.remove("lit"));
       order.forEach((id, i) => setTimeout(() => { $(`.agent[data-a="${id}"]`)?.classList.add("lit"); toast(`${A[id].name}: ${msgs[i]}`); }, i * 900));
     });
@@ -531,11 +536,21 @@
     const navKey = key.split("/")[0];
     $("#nav").innerHTML = NAV.map(([id, label, ic, badge]) => id === "|" ? `<div class="group">${label}</div>`
       : `<a href="#/${id}" class="${id === navKey ? "on" : ""}" ${id === navKey ? 'aria-current="page"' : ""}>${icon(ic)}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ""}</a>`).join("");
+    const TABS = [["clues", "단서", "link"], ["home", "홈", "home"], ["report", "리포트", "chart"], ["checklist", "체크", "check"], ["chat", "채팅", "chat"]];
+    const inTabs = TABS.some((t) => t[0] === navKey);
+    $("#tabbar").innerHTML = TABS.map(([id, label, ic]) => `<a href="#/${id}" class="${id === navKey ? "on" : ""}" ${id === navKey ? 'aria-current="page"' : ""}>${icon(ic)}<span>${label}</span></a>`).join("")
+      + `<button type="button" id="moreBtn" class="${inTabs ? "" : "on"}" aria-expanded="false">${icon("plus")}<span>더보기</span></button>`;
+    $("#sheet").hidden = true;
+    $("#sheet").innerHTML = NAV.filter((n) => n[0] !== "|" && !TABS.some((t) => t[0] === n[0]))
+      .map(([id, label, ic]) => `<a href="#/${id}" class="${id === navKey ? "on" : ""}">${icon(ic)}<span>${label}</span></a>`).join("");
+    $("#moreBtn").addEventListener("click", (e) => { const sh = $("#sheet"); sh.hidden = !sh.hidden; e.currentTarget.setAttribute("aria-expanded", String(!sh.hidden)); });
     closeDrawer();
     VIEWS[key](new URLSearchParams(qs || ""));
     document.title = `${NAV.find((n) => n[0] === navKey)?.[1] || "MORU"} · MORU 데모`;
     $("#nav a.on")?.scrollIntoView({ block: "nearest", inline: "center" });
     if (!qs || !qs.includes("item")) window.scrollTo(0, 0);
+    const at = new URLSearchParams(qs || "").get("at"); // 캡처용: #/report?at=domains
+    if (at) document.getElementById(at)?.scrollIntoView();
   }
   window.addEventListener("hashchange", route);
   route();
