@@ -44,6 +44,7 @@ CONDITIONS = {c.name: c for c in [
     Condition("no_source", "출처 태그 제거", Toggles(use_source_tags=False)),
     Condition("no_abstain", "판단 보류 규칙 제거", Toggles(use_abstain_rule=False)),
     Condition("none", "전체 제거", Toggles(False, False, False)),
+    Condition("forced", "판단 보류 불가(일반 LLM 채점)", Toggles(use_abstain_rule=False, allow_abstain=False)),
     Condition("parent_only", "일기만", content="parent"),
     Condition("caption_only", "캡션만", content="caption"),
     Condition("batched", "일괄 검색", retrieval="batched"),
@@ -115,7 +116,8 @@ def run_scoring(name: str, week: int, repeat: int = 0) -> dict:
     if condition.single:
         scores = score.single_agent(prep["prompt"], prep["items"], prep["videos"], repeat)
     else:
-        scores = score.scoring_agent(prep["prompt"], prep["items"], repeat, tag=f"score:{name}")
+        scores = score.scoring_agent(prep["prompt"], prep["items"], repeat, tag=f"score:{name}",
+                                     forced=not condition.toggles.allow_abstain)
     captions = index.load_captions()
     result = {
         "condition": name, "label": condition.label, "week": week, "repeat": repeat,
@@ -213,3 +215,61 @@ def run_combined_report() -> dict:
     path.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     path.with_suffix(".md").write_text(report.to_markdown(out), encoding="utf-8")
     return out
+
+
+# ---------------------------------------------------------------- 채팅·상담 요약 데모(웹 데모용)
+DEMO = config.RESULTS_DIR / "demo"
+CHAT_QUESTIONS = [
+    "요즘 걷는 건 어때?",
+    "말이 느린 것 같은데 괜찮아?",
+    "혼자 밥 먹는 건 잘하고 있어?",
+    "배변 훈련은 어떻게 되고 있어?",  # 기록에 없는 질문
+]
+
+
+def chat_path(n: int) -> Path:
+    return DEMO / f"chat_{n}.json"
+
+
+def run_chat(n: int) -> dict:
+    """2주 전체 기간으로 질문 하나에 답한다(LLM 1회)."""
+    from moru.interfaces import ChatAgent
+
+    start, end = WEEKS[1][0], WEEKS[2][1]
+    agent = ChatAgent(qdrant(), ensure_index("both"), 18)
+    question = CHAT_QUESTIONS[n]
+    output, records, prompt = agent.answer(CHILD, question, start, end)
+    result = {"question": question, "period": [str(start), str(end)], "retrieved": [r.model_dump() for r in records],
+              "output": output.model_dump(), "model": config.GEMINI_MODEL}
+    DEMO.mkdir(parents=True, exist_ok=True)
+    chat_path(n).write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
+    context.save(prompt, config.RESULTS_DIR / "examples" / "contexts" / f"chat_{n}.txt")  # 문항 원문 없음
+    return result
+
+
+def counsel_path() -> Path:
+    return DEMO / "counsel.json"
+
+
+def run_counsel() -> dict:
+    """2주 합산 결과에서 우려 영역을 골라 상담 요약을 만든다(LLM 1회).
+
+    조율 규칙(0~1점 문항 영역이 2주 연속)에 걸린 영역이 있으면 그 영역, 없으면 합산 결과에서
+    0~1점 문항이 있는 영역을 쓴다. 어느 쪽이었는지 결과에 남긴다.
+    """
+    from moru.interfaces import CounselSummaryAgent
+
+    combined = json.loads(combined_path().read_text(encoding="utf-8"))
+    lasting = [h.split(": ")[1].split()[0] for h in combined["handoffs"] if h.startswith("상담 요약")]
+    concern = [d["domain"] for d in combined["domains"] if d["concern"]]
+    domain, trigger = (lasting[0], "조율 규칙: 2주 연속 0~1점 문항") if lasting else (
+        concern[0], "데모용 직접 호출: 2주 합산 결과에서 0~1점 문항이 있는 영역(2주 연속 조건은 충족하지 않음)")
+    start, end = WEEKS[1][0], WEEKS[2][1]
+    agent = CounselSummaryAgent(qdrant(), ensure_index("both"), 18)
+    output, records, prompt = agent.summarize(CHILD, domain, load_items(), combined["scores"], start, end)
+    result = {"domain": domain, "trigger": trigger, "period": [str(start), str(end)],
+              "retrieved": [r.model_dump() for r in records], "output": output.model_dump(), "model": config.GEMINI_MODEL}
+    DEMO.mkdir(parents=True, exist_ok=True)
+    counsel_path().write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
+    context.save(context.mask_items(prompt, load_items()), config.RESULTS_DIR / "examples" / "contexts" / "counsel.txt")
+    return result

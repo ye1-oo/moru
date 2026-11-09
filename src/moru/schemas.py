@@ -125,6 +125,21 @@ class ScoringOutput(BaseModel):
     items: list[ItemScore]
 
 
+class ForcedItemScore(BaseModel):
+    """'판단 보류 불가' 기준선: 점수는 반드시 0~3 정수."""
+
+    item_id: str
+    score: int = Field(description="0~3 정수(필수)")
+    evidence_quote: str | None = Field(description="근거 기록에서 그대로 옮긴 문장")
+    evidence_date: str | None = Field(description="근거 기록의 날짜 YYYY-MM-DD")
+    source: Source | None = Field(description="parent 또는 caption")
+    confidence: float = Field(description="0~1")
+
+
+class ForcedScoringOutput(BaseModel):
+    items: list[ForcedItemScore]
+
+
 class DomainNote(BaseModel):
     domain: Domain
     note: str = Field(description="이 영역에 대한 한두 문장")

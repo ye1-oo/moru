@@ -25,12 +25,13 @@ class Toggles:
     use_date_tags: bool = True
     use_source_tags: bool = True
     use_abstain_rule: bool = True
+    allow_abstain: bool = True  # False: 일반적인 LLM 채점 기준선(null 금지, '기록 내용만 근거' 규칙 없음)
 
 
 ROLE = "당신은 영유아 발달 기록을 읽고 K-DST 문항별 참고 평가값을 매기는 채점 담당입니다."
-RULE_BASE = """규칙:
-- 아래 기록에 적힌 내용만 근거로 삼습니다. 일반적인 발달 지식으로 추측하지 않습니다.
-- evidence_quote에는 근거 기록의 문장을 바꾸지 말고 그대로 옮깁니다.
+RULE_EVIDENCE_ONLY = "- 아래 기록에 적힌 내용만 근거로 삼습니다. 일반적인 발달 지식으로 추측하지 않습니다."
+RULE_FORCED = "- 모든 문항에 0~3점 정수로 점수를 매깁니다. 점수를 비워 둘 수 없습니다."
+RULE_BASE = """- evidence_quote에는 근거 기록의 문장을 바꾸지 말고 그대로 옮깁니다.
 - 이 결과는 공식 검사 결과나 진단이 아닌 참고 평가값입니다."""
 RULE_DATE = "- evidence_date에는 근거 기록 머리말의 날짜를 적습니다. '어제', '지난주부터' 같은 표현도 그 기록의 날짜로 적습니다."
 RULE_SOURCE = """- 기록은 [부모 일기](부모가 쓴 글)와 [미디어 캡셔닝 내용](AI가 영상을 보고 쓴 행동 묘사)으로 나뉩니다.
@@ -44,12 +45,15 @@ OUTPUT = "출력: 아래 모든 문항에 대해 items 배열에 하나씩, item
 
 
 def rules(t: Toggles) -> str:
-    lines = [ROLE, "", RULE_BASE]
+    # 기본 조건의 프롬프트가 이전 실행과 글자 하나까지 같도록 순서를 유지한다(캐시·반복 비교).
+    lines = [ROLE, "", "규칙:"] + ([RULE_EVIDENCE_ONLY] if t.allow_abstain else []) + [RULE_BASE]
+    if not t.allow_abstain:
+        lines.append(RULE_FORCED)
     if t.use_date_tags:
         lines.append(RULE_DATE)
     if t.use_source_tags:
         lines.append(RULE_SOURCE)
-    if t.use_abstain_rule:
+    if t.use_abstain_rule and t.allow_abstain:
         lines.append(RULE_ABSTAIN)
     return "\n".join(lines)
 

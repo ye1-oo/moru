@@ -21,15 +21,20 @@ MODALITY = ["parent_only", "caption_only"]
 
 
 def queue() -> list[tuple]:
-    """2026-11-08 조정: ④ 일괄 검색은 향후 실험 계획으로 돌리고, 아낀 호출을 ①② 반복에 쓴다.
-    우선순위: 기본 end-to-end > ① 단일 > ② 요소별 제거 > ③ 일기만/캡션만 > ①② 반복 > 2주 합산 리포트."""
+    """우선순위 큐(2026-11-09 조정).
+    기본 end-to-end > ① > ② > ③ > 판단 보류 불가(기준선) > 2주 합산 리포트 > 채팅·상담 데모 > 반복.
+    반복 우선순위: 멀티, 단일, 날짜 태그 제거, 판단 보류 불가 > 전체 제거 > 출처 태그 제거, 판단 보류 규칙 제거.
+    ④ 일괄 검색은 향후 실험 계획."""
     q = [("score", "multi", 1, 0), ("score", "multi", 2, 0), ("report", "multi", 1, 0), ("report", "multi", 2, 0)]
     q += [("score", "single", w, 0) for w in (1, 2)]
     q += [("score", c, w, 0) for c in ABLATIONS for w in (1, 2)]
     q += [("score", c, w, 0) for c in MODALITY for w in (1, 2)]
-    for rep in (1, 2):
-        q += [("score", c, w, rep) for c in ["multi", "single", *ABLATIONS] for w in (1, 2)]
+    q += [("score", "forced", w, 0) for w in (1, 2)]
     q += [("combined", "multi", 0, 0)]
+    q += [("chat", "multi", n, 0) for n in range(len(pipeline.CHAT_QUESTIONS))] + [("counsel", "multi", 0, 0)]
+    for group in (["multi", "single", "no_date", "forced"], ["none"], ["no_source", "no_abstain"]):
+        for rep in (1, 2):
+            q += [("score", c, w, rep) for c in group for w in (1, 2)]
     return q
 
 
@@ -55,6 +60,10 @@ def done(task: tuple) -> bool:
     kind, cond, week, rep = task
     if kind == "combined":
         return pipeline.combined_path().exists()
+    if kind == "chat":
+        return pipeline.chat_path(week).exists()
+    if kind == "counsel":
+        return pipeline.counsel_path().exists()
     return report_done(week, rep) if kind == "report" else pipeline.raw_path(cond, week, rep).exists()
 
 
@@ -69,6 +78,10 @@ def run(task: tuple) -> None:
         pipeline.run_week_report(week, rep)
     elif kind == "combined":
         pipeline.run_combined_report()
+    elif kind == "chat":
+        pipeline.run_chat(week)
+    elif kind == "counsel":
+        pipeline.run_counsel()
     else:
         pipeline.run_scoring(cond, week, rep)
 

@@ -21,7 +21,7 @@ RESULTS = config.RESULTS_DIR
 # 첫 조건이 비교 기준이다. ④ 문항별 vs 일괄 검색은 2026-11-08 "향후 실험 계획"으로 돌렸다.
 EXPERIMENTS = {
     "① 단일 vs 멀티 에이전트": ["multi", "single"],
-    "② 컨텍스트 요소별 제거": ["multi", "no_date", "no_source", "no_abstain", "none"],
+    "② 컨텍스트 요소별 제거": ["multi", "no_date", "no_source", "no_abstain", "none", "forced"],
     "③ 일기 / 캡션 / 둘 다": ["multi", "parent_only", "caption_only"],
 }
 MAIN = ["환각 비율", "근거 추적 정확도"]          # 주 지표
@@ -77,6 +77,52 @@ def run_table(results, gold) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+HALLUCINATION_CONDS = ["multi", "no_abstain", "none", "forced"]
+
+
+def _concern_domains(result: dict) -> int:
+    from moru import report
+    from moru.schemas import ItemScore
+
+    scores = [ItemScore(**{k: v for k, v in s.items() if k != "flags"}) for s in result["scores"]]
+    return sum(d["concern"] for d in report.aggregate(pipeline.load_items(), scores))
+
+
+def hallucination_table(runs: pd.DataFrame, results: list[dict] | None = None, gold=None) -> list[str]:
+    """핵심 비교: 판단 보류를 허용하는가에 따른 환각 비율(정답이 판단 보류인 문항 중 점수를 준 개수)."""
+    present = [c for c in HALLUCINATION_CONDS if c in set(runs["condition"])]
+    if "forced" not in present:
+        return []
+    rows = []
+    for cond in present:
+        sub = runs[runs["condition"] == cond]
+        count = int(round((sub["환각 비율"] * sub["n:환각 비율"]).sum()))
+        total = int(sub["n:환각 비율"].sum())
+        extra = {}
+        if results is not None:
+            mine = [r for r in results if r["condition"] == cond]
+            tables = pd.concat([evaluate.item_table(r, gold) for r in mine])
+            given = tables[tables["gold"].isna() & tables["pred"].notna()]["pred"].astype(int)
+            extra = {"그 점수의 분포": ", ".join(f"{v}점 {n}" for v, n in sorted(given.value_counts().items())) or "-",
+                     "관찰 필요 영역 수(실행 평균, 6개 중)": f"{sum(_concern_domains(r) for r in mine) / len(mine):.1f}"}
+        rows.append({"조건": pipeline.CONDITIONS[cond].label, "실행 수": len(sub),
+                     "환각 비율": _cell(sub["환각 비율"].mean(), sub["환각 비율"].std(ddof=0), len(sub)),
+                     "근거 없는 문항에 점수를 준 수": f"{count} / {total}", **extra,
+                     "근거 추적 정확도": _cell(sub["근거 추적 정확도"].mean(), sub["근거 추적 정확도"].std(ddof=0), len(sub))})
+    return ["## 핵심: 판단 보류 허용 여부와 환각", "",
+            "'판단 보류 불가'는 null을 허용하지 않는 출력 스키마(모든 문항 0~3점 필수)에 '기록에 적힌 내용만 근거로' 규칙도 뺀 "
+            "일반적인 LLM 채점 기준선이다. 나머지 컨텍스트(날짜·출처 태그, 검색된 근거)는 같다.", "",
+            pd.DataFrame(rows).to_markdown(index=False), "",
+            "- 판단 보류 불가 조건은 근거가 없는 문항 대부분에 0점('전혀 할 수 없다')을 매겼다. '기록에 없음'이 '못 한다'로 바뀌어 "
+            "모든 영역이 '관찰 필요'(0~1점 문항 있음)로 표시되고, 조율 규칙상 상담 요약 대상이 된다.",
+            "- 이 조건에서도 근거 문장은 실제 기록에서 가져왔지만(예: '블록 장난감도 새로 샀는데 아직 꺼내 보지는 않았다' → 블록 쌓기 0점), "
+            "점수를 뒷받침하지 않는 문장이다. 근거 추적 정확도는 문장이 실재하는지만 보므로 이런 오류를 잡지 못한다.",
+            "- 환각 비율 1.00은 스키마가 점수를 강제한 결과이므로, 이 표의 요점은 비율 자체보다 근거 없는 문항이 어떤 점수로 바뀌는지다.", ""]
+
+
+RESULTS_CACHE: dict = {"results": None, "gold": None}
+
+
 def summary_tables(runs: pd.DataFrame) -> str:
     md = ["# 실험 B 결과", "",
           f"가상 아이 1명(생후 18개월), 2주(주당 가상 일기 7편, 18~19개월 검사지 48문항), 모델 {config.GEMINI_MODEL}, temperature 0.",
@@ -84,6 +130,7 @@ def summary_tables(runs: pd.DataFrame) -> str:
           "**주 지표: 환각 비율(낮을수록 좋음), 근거 추적 정확도(높을수록 좋음).** 정확 일치·점수 재현율·출처 정확도는 보조 지표.",
           "'(차이 없음)': 첫 행(기준)과의 평균 차이가 실행당 문항 1개 미만이거나, 반복이 있을 때 표준편차 이하인 경우.",
           "정답 라벨은 2026-11-08에 고정했다(이전 수정 1회: 첫 실행 후 fine_motor_05 누락 보완).", ""]
+    md += hallucination_table(runs, RESULTS_CACHE["results"], RESULTS_CACHE["gold"])
     rows = []
     for title, conds in EXPERIMENTS.items():
         present = [c for c in conds if c in set(runs["condition"])]
@@ -192,18 +239,25 @@ def cases(results, gold, limit: int = 5) -> str:
     # 사례 유형마다 조건 간 출력(점수, 출처, 날짜)이 가장 많이 갈린 문항을 하나씩 고른다.
     preferred = ["conflict", "ambiguous_time", "caption_only", "bait", "parent"]
     picks = []
+    # 출처 태그 효과는 수치 대신 이 충돌 사례로 보여준다(2026-11-09). 항상 맨 앞.
+    fixed = gold[(gold["item_id"] == "18-19_fine_motor_02") & (gold["week"] == 2)]
+    for _, g in fixed.iterrows():
+        outs = {c: next(s for s in by_key[(c, 2)]["scores"] if s["item_id"] == g["item_id"])
+                for c in ["multi", "no_source", "none", "single"] if (c, 2) in by_key}
+        picks.append((g, outs))
+    preferred = ["ambiguous_time", "caption_only", "bait", "conflict", "parent"]
     for case in preferred:
         best = None
         for _, g in gold[gold["case"] == case].iterrows():
             outs = {}
-            for cond in pipeline.CONDITIONS:
+            for cond in ["multi", "single", "no_date", "forced", "none"]:  # 읽기 쉽게 대표 조건만
                 r = by_key.get((cond, g["week"]))
                 if r:
                     outs[cond] = next(s for s in r["scores"] if s["item_id"] == g["item_id"])
             distinct = len({(o["score"], o["source"], o["evidence_date"]) for o in outs.values()})
             if len(outs) >= 2 and distinct >= 2 and (best is None or distinct > best[0]):
                 best = (distinct, g, outs)
-        if best:
+        if best and all(best[1]["item_id"] != p[0]["item_id"] for p in picks):
             picks.append(best[1:])
         if len(picks) >= limit:
             break
@@ -213,7 +267,9 @@ def cases(results, gold, limit: int = 5) -> str:
     for n, (g, outs) in enumerate(picks, 1):
         gold_text = "판단 보류" if g["gold"] is None or pd.isna(g["gold"]) else f"{int(g['gold'])}점"
         md += [f"## 사례 {n}. {CASE_KO.get(g['case'], g['case'])}: {g['item_id']} ({g['week']}주차)", "",
-               f"- 정답: {gold_text}. {g['note']}", ""]
+               f"- 정답: {gold_text}. {g['note']}",
+               "- 조건별 (점수, 출처, confidence): " + ", ".join(
+                   f"{pipeline.CONDITIONS[c].label} ({o['score']}, {o['source']}, {o['confidence']})" for c, o in outs.items()), ""]
         for cond, s in outs.items():
             r = by_key[(cond, g["week"])]
             fragment = context.mask_items(item_fragment(r["prompt"], g["item_id"]), items)
@@ -223,12 +279,40 @@ def cases(results, gold, limit: int = 5) -> str:
     return "\n".join(md)
 
 
+def demo_md() -> None:
+    """웹 데모용 채팅·상담 요약 결과를 사람이 읽기 좋은 md로 묶는다."""
+    demo = RESULTS / "demo"
+    chats = sorted(demo.glob("chat_*.json"))
+    if not chats and not (demo / "counsel.json").exists():
+        return
+    md = ["# MORU 채팅·상담 요약 데모", "",
+          "가상 아이(생후 18개월), 기록 기간 2026-10-19 ~ 2026-11-01. 두 에이전트 모두 채점과 같은 검색 모듈"
+          "(`retrieve.search`, KURE-v2 + Qdrant, top-3)을 쓴다. 참고용이며 진단이 아니다.", ""]
+    for path in chats:
+        c = json.loads(path.read_text(encoding="utf-8"))
+        md += [f"## Q. {c['question']}", "", c["output"]["answer"], "",
+               f"- 근거 있음: {c['output']['has_evidence']}"]
+        md += [f"  - {x['date']} ({'부모 일기' if x['source'] == 'parent' else 'AI 영상 묘사'}) \"{x['quote']}\""
+               for x in c["output"]["citations"]]
+        md += ["- 검색된 기록: " + ", ".join(f"{r['date']}" for r in c["retrieved"]), ""]
+    if (demo / "counsel.json").exists():
+        c = json.loads((demo / "counsel.json").read_text(encoding="utf-8"))
+        o = c["output"]
+        md += [f"## 상담사용 요약: {context.DOMAIN_KO[c['domain']]}", "", f"- 호출 근거: {c['trigger']}", "", o["summary"], "",
+               "**관찰 기록**", ""]
+        md += [f"- {x['date']} ({'부모 일기' if x['source'] == 'parent' else 'AI 영상 묘사'}) \"{x['quote']}\"" for x in o["observations"]]
+        md += ["", "**상담에서 확인해 볼 점**", ""] + [f"- {q}" for q in o["open_questions"]]
+        md += ["", f"**한계**: {o['limitations']}", ""]
+    (demo / "demo.md").write_text(context.mask_items("\n".join(md), pipeline.load_items()), encoding="utf-8")
+
+
 def main() -> None:
     gold = evaluate.load_gold()
     results = evaluate.load_results(pipeline.RAW)
     if not results:
         print("결과 없음")
         return
+    RESULTS_CACHE.update(results=results, gold=gold)
     runs = run_table(results, gold)
     runs.to_csv(RESULTS / "exp_b_runs.csv", index=False, encoding="utf-8-sig")
     (RESULTS / "tables.md").write_text(summary_tables(runs), encoding="utf-8")
@@ -236,6 +320,7 @@ def main() -> None:
     figures(runs)
     (RESULTS / "examples").mkdir(exist_ok=True)
     (RESULTS / "examples" / "cases.md").write_text(cases(results, gold), encoding="utf-8")
+    demo_md()
     print((RESULTS / "tables.md").read_text(encoding="utf-8"))
 
 

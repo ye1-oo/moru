@@ -8,7 +8,7 @@ LLM 출력은 느슨한 ScoringOutput으로 받고, 아래 check는 "모든 문�
 from pathlib import Path
 
 from moru import llm
-from moru.schemas import Diary, ItemScore, KdstItem, ScoringOutput
+from moru.schemas import Diary, ForcedScoringOutput, ItemScore, KdstItem, ScoringOutput
 
 
 def _check_ids(item_ids: list[str]):
@@ -20,10 +20,13 @@ def _check_ids(item_ids: list[str]):
     return check
 
 
-def scoring_agent(prompt: str, items: list[KdstItem], repeat: int = 0, tag: str = "score") -> list[ItemScore]:
-    result = llm.generate(prompt, schema=ScoringOutput, check=_check_ids([i.item_id for i in items]),
+def scoring_agent(prompt: str, items: list[KdstItem], repeat: int = 0, tag: str = "score",
+                  forced: bool = False) -> list[ItemScore]:
+    """forced=True면 null을 허용하지 않는 스키마('판단 보류 불가' 기준선)로 받는다."""
+    schema = ForcedScoringOutput if forced else ScoringOutput
+    result = llm.generate(prompt, schema=schema, check=_check_ids([i.item_id for i in items]),
                           repeat=repeat, tag=tag)
-    return result.items
+    return [ItemScore(**i.model_dump()) for i in result.items]
 
 
 def single_agent(prompt: str, items: list[KdstItem], videos: list[Path], repeat: int = 0) -> list[ItemScore]:
