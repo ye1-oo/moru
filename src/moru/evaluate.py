@@ -8,6 +8,11 @@
 - 근거 추적 정확도: 모델이 점수를 준 문항 중 근거 문장이 실제 일기·캡션에 있고 날짜도 그 기록과 같은 비율
 - 출처 정확도: 근거 문장이 확인된 문항 중 출처(parent/caption)가 맞는 비율
 - 검색 재현율: 정답 근거 일기가 문항의 top-k 검색 결과에 든 비율
+- 단서-문항 연결 정밀도: 점수를 준 문항 중 근거 문장이 들어 있는 기록(일기)이 정답 relevance 라벨에서 그 문항과
+  관련된 기록인 비율. 근거 문장을 기록에서 찾지 못하면(추적 불가) 틀린 연결로 센다.
+  근거 문장이 [부모 일기]에서 찾아졌는지 [캡션]에서 찾아졌는지로 나눠서도 낸다.
+- 단서-문항 연결 재현율: 정답에서 관련 기록이 있는 (주, 문항) 중 그 관련 기록을 근거로 연결한 비율.
+  정답 사례 유형으로 나눈다: 일기 단서(parent, ambiguous_time), 캡션 단서(caption_only), 둘 다(both, conflict).
 """
 
 import csv
@@ -20,10 +25,27 @@ import pandas as pd
 from moru import config
 
 GOLD_WEEKLY = config.GOLD_DIR / "child_A_weekly.csv"
+# 3주차(촘촘한 기록)는 별도 파일로 두고 실행 전에 고정했다(2026-11-10).
+GOLD_FILES = [GOLD_WEEKLY, config.GOLD_DIR / "child_A_w3_weekly.csv"]
+RELEVANCE_FILES = [config.GOLD_DIR / "child_A_relevance.csv", config.GOLD_DIR / "child_A_w3_relevance.csv"]
+CLUE_GROUP = {"parent": "일기 단서", "ambiguous_time": "일기 단서", "caption_only": "캡션 단서",
+              "both": "둘 다", "conflict": "둘 다"}
+
+
+def load_relevance() -> dict[str, set[str]]:
+    """문항 → 정답상 관련 기록(diary_id) 집합. 주는 diary_id로 구분된다."""
+    rel: dict[str, set[str]] = {}
+    for path in RELEVANCE_FILES:
+        if path.exists():
+            for row in csv.DictReader(path.open(encoding="utf-8")):
+                if row["relevant"] == "1":
+                    rel.setdefault(row["item_id"], set()).add(row["diary_id"])
+    return rel
 
 
 def load_gold() -> pd.DataFrame:
-    gold = pd.read_csv(GOLD_WEEKLY, dtype=str, keep_default_na=False)
+    gold = pd.concat([pd.read_csv(p, dtype=str, keep_default_na=False) for p in GOLD_FILES if p.exists()],
+                     ignore_index=True)
     gold["week"] = gold["week"].astype(int)
     gold["gold"] = gold["gold_score_or_abstain"].map(lambda v: None if v == "abstain" else int(v))
     return gold
@@ -45,7 +67,8 @@ def item_table(result: dict, gold: pd.DataFrame) -> pd.DataFrame:
             "confidence": s["confidence"], "source": s["source"], "evidence_date": s["evidence_date"],
             "evidence_quote": s["evidence_quote"],
             "quote_found": f["quote_found"], "date_match": f["date_match"], "source_match": f["source_match"],
-            "inconsistent": f["inconsistent"],
+            "inconsistent": f["inconsistent"], "found_in": f.get("found_in"),
+            "gold_diaries": ";".join(gold_diaries),
             "retrieved_gold": (sum(d in evidence for d in gold_diaries), len(gold_diaries)) if evidence else None,
         })
     return pd.DataFrame(rows)
@@ -82,6 +105,43 @@ def metrics(table: pd.DataFrame) -> dict:
     retrieved = table["retrieved_gold"].dropna()
     if len(retrieved):
         out["검색 재현율"] = _ratio(sum(r[0] for r in retrieved), sum(r[1] for r in retrieved))
+    return out
+
+
+def _text(value) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def link_metrics(table: pd.DataFrame, relevance: dict[str, set[str]]) -> dict:
+    """단서-문항 연결 정밀도·재현율(정답 relevance 라벨 기준). table은 한 실행(한 주)의 item_table."""
+    links = []  # (연결 출처, 맞는가)
+    for _, r in table[table["pred"].notna()].iterrows():
+        hits = [h.split(":") for h in _text(r["found_in"]).split(";") if h]
+        week_rel = {d for d in relevance.get(r["item_id"], set()) if d in set(r["gold_diaries"].split(";"))} \
+            if r["gold_diaries"] else set()
+        if not hits:
+            links.append(("추적 불가", False))
+            continue
+        good = [s for d, s in hits if d in week_rel]
+        src = good[0] if good else hits[0][1]
+        links.append(({"parent": "일기 단서", "caption": "캡션 단서"}[src], bool(good)))
+    out = {"연결 정밀도": _ratio(sum(ok for _, ok in links), len(links)), "n:연결 정밀도": len(links)}
+    for group in ("일기 단서", "캡션 단서"):
+        mine = [ok for g, ok in links if g == group]
+        out[f"연결 정밀도({group})"] = _ratio(sum(mine), len(mine))
+        out[f"n:연결 정밀도({group})"] = len(mine)
+    out["n:추적 불가"] = sum(g == "추적 불가" for g, _ in links)
+    gold_pairs = table[table["gold_diaries"] != ""]
+    found = []
+    for _, r in gold_pairs.iterrows():
+        diaries = {h.split(":")[0] for h in _text(r["found_in"]).split(";") if h} if r["pred"] is not None and not pd.isna(r["pred"]) else set()
+        found.append((CLUE_GROUP.get(r["case"], "일기 단서"), bool(diaries & set(r["gold_diaries"].split(";")))))
+    out["연결 재현율"] = _ratio(sum(ok for _, ok in found), len(found))
+    out["n:연결 재현율"] = len(found)
+    for group in ("일기 단서", "캡션 단서", "둘 다"):
+        mine = [ok for g, ok in found if g == group]
+        out[f"연결 재현율({group})"] = _ratio(sum(mine), len(mine))
+        out[f"n:연결 재현율({group})"] = len(mine)
     return out
 
 

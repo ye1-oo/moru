@@ -60,8 +60,8 @@ def checklist_agent(prompt: str, domains: list[str], repeat: int = 0) -> Checkli
     def check(result: ChecklistOutput) -> None:
         if sorted(d.domain for d in result.domains) != sorted(domains):
             raise ValueError("체크리스트 영역이 맞지 않습니다")
-        if any(not 2 <= len(d.behaviors) <= 3 for d in result.domains):
-            raise ValueError("영역마다 행동 2~3개가 필요합니다")
+        if any(not 1 <= len(d.behaviors) <= 3 for d in result.domains):
+            raise ValueError("영역마다 행동 1~3개가 필요합니다")
     return llm.generate(prompt, schema=ChecklistOutput, check=check, repeat=repeat, tag="checklist")
 
 

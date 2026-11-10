@@ -159,7 +159,7 @@ class ChecklistBehavior(BaseModel):
 
 class ChecklistDomain(BaseModel):
     domain: Domain
-    behaviors: list[ChecklistBehavior] = Field(description="대표 관찰 행동 2~3개")
+    behaviors: list[ChecklistBehavior] = Field(description="대표 관찰 행동 1~3개(정보 부족 영역은 2~3개)")
 
 
 class ChecklistOutput(BaseModel):

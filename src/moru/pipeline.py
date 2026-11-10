@@ -4,7 +4,8 @@
 → (조건부) 체크리스트 에이전트, (조건부) 상담 요약 에이전트(인터페이스만).
 
 조율 규칙은 고정된 if 문이다. 에이전트가 스스로 다음 행동을 고르지 않는다.
-- '정보 부족' 영역이 하나라도 있으면 → 그 영역의 판단 보류 문항으로 체크리스트 에이전트 호출
+- 판단 보류 문항이 하나라도 있으면 → 그 문항들로 체크리스트 에이전트 호출(2026-11-10 변경, 웹 데모와 같음).
+  '정보 부족' 영역(판단 보류 ≥ 50%)은 집계와 리포트에서 따로 표시한다.
 - 0~1점 문항이 있는 영역이 2주 연속이면 → 상담 요약 에이전트 호출 대상으로 기록(구현 안 함)
 
 비교 실험용 조건(CONDITIONS)도 여기서 정의한다.
@@ -22,7 +23,8 @@ from moru.schemas import Diary, ItemScore, KdstItem
 CHILD = "child_A"
 DIARY_FILE = config.DIARY_DIR / "child_A.jsonl"
 AGE_BAND = "18-19"
-WEEKS = {1: (Date(2026, 10, 19), Date(2026, 10, 25)), 2: (Date(2026, 10, 26), Date(2026, 11, 1))}
+WEEKS = {1: (Date(2026, 10, 19), Date(2026, 10, 25)), 2: (Date(2026, 10, 26), Date(2026, 11, 1)),
+         3: (Date(2026, 11, 2), Date(2026, 11, 8))}  # 3주차: 하루 2~3개 행동을 적은 촘촘한 기록(2026-11-10 추가)
 RAW = config.RESULTS_DIR / "raw" / "exp_b"
 CONTEXTS = config.RESULTS_DIR / "contexts"
 
@@ -76,6 +78,13 @@ def ensure_index(content: str) -> str:
     if not qdrant().collection_exists(name):
         index.build(qdrant(), index.load_diaries(DIARY_FILE), index.load_captions(), "kure", content)
     return name
+
+
+def checklist_targets(items: list[KdstItem], scores: list[ItemScore]) -> tuple[list[KdstItem], list[str]]:
+    """조율 규칙 ①: 판단 보류 문항과 그 영역. 비어 있으면 체크리스트 에이전트를 부르지 않는다."""
+    by_id = {s.item_id: s for s in scores}
+    targets = [i for i in items if by_id[i.item_id].score is None]
+    return targets, list(dict.fromkeys(i.domain for i in targets))
 
 
 def raw_path(condition: str, week: int, repeat: int) -> Path:
@@ -149,15 +158,13 @@ def run_week_report(week: int, repeat: int = 0) -> dict:
     context.save(prompt, CONTEXTS / f"report_w{week}.txt")
     week_out["report"] = report.report_agent(prompt, repeat).model_dump()
 
-    # 조율 규칙 1: 정보 부족 영역 → 체크리스트 에이전트
-    insufficient = {d["domain"] for d in domains if d["status"] == "정보 부족"}
-    if insufficient:
-        by_id = {s.item_id: s for s in scores}
-        targets = [i for i in items if i.domain in insufficient and by_id[i.item_id].score is None]
-        prompt = context.checklist_context(18, targets)
+    # 조율 규칙 1: 판단 보류 문항 → 체크리스트 에이전트
+    targets, target_domains = checklist_targets(items, scores)
+    if targets:
+        prompt = context.checklist_context(18, targets, domains)
         context.save(prompt, CONTEXTS / f"checklist_w{week}.txt")
-        week_out["checklist"] = report.checklist_agent(prompt, sorted(insufficient), repeat).model_dump()
-        week_out["handoffs"].append(f"체크리스트 에이전트 호출: 정보 부족 영역 {sorted(insufficient)}")
+        week_out["checklist"] = report.checklist_agent(prompt, target_domains, repeat).model_dump()
+        week_out["handoffs"].append(f"체크리스트 에이전트 호출: 판단 보류 {len(targets)}개, 영역 {target_domains}")
 
     # 조율 규칙 2: 0~1점 문항이 있는 영역이 2주 연속 → 상담 요약 에이전트(인터페이스만)
     if previous:
@@ -200,14 +207,12 @@ def run_combined_report() -> dict:
     prompt = context.report_context(18, str(start), str(end), domains, out["changes"], report.highlights(merged, 10))
     context.save(prompt, CONTEXTS / "report_combined.txt")
     out["report"] = report.report_agent(prompt).model_dump()
-    insufficient = sorted({d["domain"] for d in domains if d["status"] == "정보 부족"})
-    if insufficient:
-        by_id = {s.item_id: s for s in merged}
-        targets = [i for i in items if i.domain in insufficient and by_id[i.item_id].score is None]
-        prompt = context.checklist_context(18, targets)
+    targets, target_domains = checklist_targets(items, merged)
+    if targets:
+        prompt = context.checklist_context(18, targets, domains)
         context.save(prompt, CONTEXTS / "checklist_combined.txt")
-        out["checklist"] = report.checklist_agent(prompt, insufficient).model_dump()
-        out["handoffs"].append(f"체크리스트 에이전트 호출: 정보 부족 영역 {insufficient}")
+        out["checklist"] = report.checklist_agent(prompt, target_domains).model_dump()
+        out["handoffs"].append(f"체크리스트 에이전트 호출: 판단 보류 {len(targets)}개, 영역 {target_domains}")
     lasting = [d["domain"] for d, p in zip(report.aggregate(items, second), report.aggregate(items, first))
                if d["concern"] and p["concern"]]
     out["handoffs"] += [f"상담 요약 에이전트 호출 대상(미구현): {d} 2주 연속 관찰 필요" for d in lasting]

@@ -19,21 +19,25 @@ from moru import config, context, evaluate, pipeline  # noqa: E402
 
 RESULTS = config.RESULTS_DIR
 # 첫 조건이 비교 기준이다. ④ 문항별 vs 일괄 검색은 2026-11-08 "향후 실험 계획"으로 돌렸다.
+# 표 순서(2026-11-10): ① 단서-문항 연결 ② 판단 보류 불가 vs MORU ③ 일기/캡션/둘 다 ④ 컨텍스트 요소 ⑤ 단일 vs 멀티
 EXPERIMENTS = {
-    "① 단일 vs 멀티 에이전트": ["multi", "single"],
-    "② 컨텍스트 요소별 제거": ["multi", "no_date", "no_source", "no_abstain", "none", "forced"],
     "③ 일기 / 캡션 / 둘 다": ["multi", "parent_only", "caption_only"],
+    "④ 컨텍스트 요소별 제거": ["multi", "no_date", "no_source", "no_abstain", "none"],
+    "⑤ 단일 vs 멀티 에이전트": ["multi", "single"],
 }
+MAIN_WEEKS = (1, 2)   # 기본 실험(주당 7편). 3주차(촘촘한 기록)는 ①②에 따로 싣는다.
+DENSE_WEEK = 3
+LINK_CONDS = ["multi", "forced", "parent_only", "caption_only", "no_date", "no_source", "no_abstain", "none", "single"]
 MAIN = ["환각 비율", "근거 추적 정확도"]          # 주 지표
 AUX = ["정확 일치", "점수 재현율", "출처 정확도"]  # 보조 지표(±1 일치는 쓰지 않음)
 NOTES = {
-    "① 단일 vs 멀티 에이전트": [
+    "⑤ 단일 vs 멀티 에이전트": [
         "단일 에이전트는 캡션 대신 원본 영상을 직접 봤다. 정답은 일기와 캡션 텍스트로 만들었으므로, 단일 에이전트가 영상에서 "
         "실제로 본 행동(캡션에 없는 행동)에 점수를 주면 환각으로 집계된다. 단일 에이전트의 환각 비율은 과대 추정일 수 있다.",
         "단일 에이전트가 영상 근거로 쓴 문장은 자기 말로 쓴 묘사라 실제 기록에서 찾을 수 없다. 근거 추적 정확도가 낮은 것은 "
         "점수가 틀렸다는 뜻이 아니라 근거를 기록으로 되짚을 수 없다는 뜻이다.",
     ],
-    "② 컨텍스트 요소별 제거": [
+    "④ 컨텍스트 요소별 제거": [
         "출처 태그를 빼도 출처 정확도가 유지되는 것은 캡션의 문체(\"~합니다\")로 출처를 추정할 수 있었기 때문으로 보인다.",
         "판단 보류 규칙을 빼도 환각 비율이 늘지 않았다. '기록에 적힌 내용만 근거로 삼는다'는 기본 규칙과 null을 허용하는 "
         "출력 스키마가 남아 있기 때문으로 보인다. 이 데이터에서는 판단 보류 규칙 문장 자체의 효과를 확인하지 못했다.",
@@ -70,14 +74,53 @@ METRICS = ["정확 일치", "±1 일치", "점수 재현율", "판단 보류 재
 
 def run_table(results, gold) -> pd.DataFrame:
     rows = []
+    relevance = evaluate.load_relevance()
     for r in results:
         t = evaluate.item_table(r, gold)
         rows.append({"condition": r["condition"], "label": r["label"], "week": r["week"], "repeat": r["repeat"],
-                     "items": len(t), **evaluate.metrics(t)})
+                     "items": len(t), **evaluate.metrics(t), **evaluate.link_metrics(t, relevance)})
     return pd.DataFrame(rows)
 
 
-HALLUCINATION_CONDS = ["multi", "no_abstain", "none", "forced"]
+def _pooled(sub: pd.DataFrame, metric: str) -> str:
+    """실행을 합쳐 센 비율(맞은 수 / 전체). 실행마다 분모가 작아 평균 대신 합산한다."""
+    n = sub[f"n:{metric}"].sum()
+    if not n:
+        return "-"
+    hit = int(round((sub[metric].fillna(0) * sub[f"n:{metric}"]).sum()))
+    return f"{hit / n:.2f} ({hit}/{int(n)})"
+
+
+LINK_COLS = ["연결 정밀도", "연결 정밀도(일기 단서)", "연결 정밀도(캡션 단서)",
+             "연결 재현율", "연결 재현율(일기 단서)", "연결 재현율(캡션 단서)", "연결 재현율(둘 다)"]
+
+
+def link_table(runs: pd.DataFrame) -> list[str]:
+    """① 단서-문항 연결 정밀도·재현율(정답 relevance 라벨 기준, LLM 호출 없음)."""
+    rows = []
+    for weeks, tag in ((MAIN_WEEKS, "1·2주차"), ((DENSE_WEEK,), "3주차(촘촘한 기록)")):
+        for cond in LINK_CONDS:
+            sub = runs[(runs["condition"] == cond) & runs["week"].isin(weeks)]
+            if sub.empty:
+                continue
+            rows.append({"기록": tag, "조건": pipeline.CONDITIONS[cond].label, "실행 수": len(sub),
+                         **{c: _pooled(sub, c) for c in LINK_COLS},
+                         "근거 추적 불가": int(sub["n:추적 불가"].sum())})
+    return ["## ① 단서-문항 연결", "",
+            "점수를 준 문항마다 근거 문장이 실제로 들어 있는 기록(일기 1편 = 부모 일기 + 캡션)을 찾아, 그 기록이 정답 relevance "
+            "라벨에서 그 문항과 관련된 기록인지 본다. 값은 실행을 합쳐 센 비율(맞은 수/전체).", "",
+            "- **연결 정밀도**: 점수를 준 문항 중 근거 기록이 정답 관련 기록인 비율. 근거 문장을 기록에서 찾지 못하면(근거 추적 불가) "
+            "틀린 연결로 센다. (일기 단서)/(캡션 단서)는 근거 문장이 부모 일기에서 찾아졌는지 캡션에서 찾아졌는지로 나눈 것.",
+            "- **연결 재현율**: 정답에 관련 기록이 있는 문항 중 그 기록을 근거로 연결한 비율. 정답 사례 유형으로 나눴다: "
+            "일기 단서(부모 서술, 시점 모호), 캡션 단서(캡션에만 있음), 둘 다(서술+캡션 일치, 서술-캡션 불일치).", "",
+            pd.DataFrame(rows).to_markdown(index=False), "",
+            "- 판단 보류 불가 조건은 근거가 없는 문항에도 점수를 줘야 하므로 관련 없는 기록에 연결하거나(정밀도 하락) "
+            "근거 문장을 지어내 추적 불가가 된다. 재현율은 모든 문항에 점수를 주므로 높게 나온다.",
+            "- 단일 에이전트는 영상 근거를 자기 말로 묘사해 기록에서 찾을 수 없어 추적 불가가 많다.",
+            "- 일기만 조건은 캡션 단서를, 캡션만 조건은 일기 단서를 연결할 수 없다(재현율 0).", ""]
+
+
+HALLUCINATION_CONDS = ["multi", "forced"]
 
 
 def _concern_domains(result: dict) -> int:
@@ -94,22 +137,25 @@ def hallucination_table(runs: pd.DataFrame, results: list[dict] | None = None, g
     if "forced" not in present:
         return []
     rows = []
-    for cond in present:
-        sub = runs[runs["condition"] == cond]
+    for weeks, tag, cond in [(w, t, c) for w, t in ((MAIN_WEEKS, "1·2주차"), ((DENSE_WEEK,), "3주차(촘촘한 기록)"))
+                             for c in present]:
+        sub = runs[(runs["condition"] == cond) & runs["week"].isin(weeks)]
+        if sub.empty:
+            continue
         count = int(round((sub["환각 비율"] * sub["n:환각 비율"]).sum()))
         total = int(sub["n:환각 비율"].sum())
         extra = {}
         if results is not None:
-            mine = [r for r in results if r["condition"] == cond]
+            mine = [r for r in results if r["condition"] == cond and r["week"] in weeks]
             tables = pd.concat([evaluate.item_table(r, gold) for r in mine])
             given = tables[tables["gold"].isna() & tables["pred"].notna()]["pred"].astype(int)
             extra = {"그 점수의 분포": ", ".join(f"{v}점 {n}" for v, n in sorted(given.value_counts().items())) or "-",
                      "관찰 필요 영역 수(실행 평균, 6개 중)": f"{sum(_concern_domains(r) for r in mine) / len(mine):.1f}"}
-        rows.append({"조건": pipeline.CONDITIONS[cond].label, "실행 수": len(sub),
+        rows.append({"기록": tag, "조건": pipeline.CONDITIONS[cond].label, "실행 수": len(sub),
                      "환각 비율": _cell(sub["환각 비율"].mean(), sub["환각 비율"].std(ddof=0), len(sub)),
                      "근거 없는 문항에 점수를 준 수": f"{count} / {total}", **extra,
                      "근거 추적 정확도": _cell(sub["근거 추적 정확도"].mean(), sub["근거 추적 정확도"].std(ddof=0), len(sub))})
-    return ["## 핵심: 판단 보류 허용 여부와 환각", "",
+    return ["## ② 판단 보류 불가 vs MORU", "",
             "'판단 보류 불가'는 null을 허용하지 않는 출력 스키마(모든 문항 0~3점 필수)에 '기록에 적힌 내용만 근거로' 규칙도 뺀 "
             "일반적인 LLM 채점 기준선이다. 나머지 컨텍스트(날짜·출처 태그, 검색된 근거)는 같다.", "",
             pd.DataFrame(rows).to_markdown(index=False), "",
@@ -117,7 +163,10 @@ def hallucination_table(runs: pd.DataFrame, results: list[dict] | None = None, g
             "모든 영역이 '관찰 필요'(0~1점 문항 있음)로 표시되고, 조율 규칙상 상담 요약 대상이 된다.",
             "- 이 조건에서도 근거 문장은 실제 기록에서 가져왔지만(예: '블록 장난감도 새로 샀는데 아직 꺼내 보지는 않았다' → 블록 쌓기 0점), "
             "점수를 뒷받침하지 않는 문장이다. 근거 추적 정확도는 문장이 실재하는지만 보므로 이런 오류를 잡지 못한다.",
-            "- 환각 비율 1.00은 스키마가 점수를 강제한 결과이므로, 이 표의 요점은 비율 자체보다 근거 없는 문항이 어떤 점수로 바뀌는지다.", ""]
+            "- 환각 비율 1.00은 스키마가 점수를 강제한 결과이므로, 이 표의 요점은 비율 자체보다 근거 없는 문항이 어떤 점수로 바뀌는지다.",
+            ("- 3주차는 하루 2~3개 발달 행동을 적은 촘촘한 기록(7편, 정답상 근거 있는 문항 22개, 판단 보류 26개)이다. 각 조건 1회 실행."
+             if any(r["기록"].startswith("3주차") for r in rows) else
+             "- 3주차(촘촘한 기록) 실행은 서버 오류(503)로 무료 한도 안에서 마치지 못해 표에 없다."), ""]
 
 
 RESULTS_CACHE: dict = {"results": None, "gold": None}
@@ -125,12 +174,16 @@ RESULTS_CACHE: dict = {"results": None, "gold": None}
 
 def summary_tables(runs: pd.DataFrame) -> str:
     md = ["# 실험 B 결과", "",
-          f"가상 아이 1명(생후 18개월), 2주(주당 가상 일기 7편, 18~19개월 검사지 48문항), 모델 {config.GEMINI_MODEL}, temperature 0.",
-          "값은 실행(주×반복)별 지표의 평균 ± 표준편차. 문항 판단 수 = 48 × 실행 수.",
+          f"가상 아이 1명(생후 18개월, 18~19개월 검사지 48문항), 모델 {config.GEMINI_MODEL}, temperature 0.",
+          "기본 실험은 1·2주차(주당 가상 일기 7편)이고, 3주차는 하루 2~3개 발달 행동을 적은 촘촘한 기록 1주(실행 전 정답 고정)로 ①②에만 따로 싣는다.",
+          "③~⑤의 값은 1·2주차 실행(주×반복)별 지표의 평균 ± 표준편차. 문항 판단 수 = 48 × 실행 수. "
+          "반복 수는 실제로 실행한 횟수다(무료 한도와 503 오류 때문에 조건마다 다르다).",
           "**주 지표: 환각 비율(낮을수록 좋음), 근거 추적 정확도(높을수록 좋음).** 정확 일치·점수 재현율·출처 정확도는 보조 지표.",
           "'(차이 없음)': 첫 행(기준)과의 평균 차이가 실행당 문항 1개 미만이거나, 반복이 있을 때 표준편차 이하인 경우.",
-          "정답 라벨은 2026-11-08에 고정했다(이전 수정 1회: 첫 실행 후 fine_motor_05 누락 보완).", ""]
+          "정답 라벨은 2026-11-08에 고정했다(이전 수정 1회: 첫 실행 후 fine_motor_05 누락 보완). 3주차 정답은 2026-11-10 실행 전에 고정했다.", ""]
+    md += link_table(runs)
     md += hallucination_table(runs, RESULTS_CACHE["results"], RESULTS_CACHE["gold"])
+    runs = runs[runs["week"].isin(MAIN_WEEKS)]
     rows = []
     for title, conds in EXPERIMENTS.items():
         present = [c for c in conds if c in set(runs["condition"])]
@@ -156,8 +209,10 @@ def summary_tables(runs: pd.DataFrame) -> str:
         md += [pd.DataFrame(table).to_markdown(index=False), ""]
         md += [f"- {note}" for note in NOTES.get(title, [])] + [""]
     md += ["## 향후 실험 계획", "",
-           "- ④ 문항별 검색 vs 일괄 검색: 주당 기록이 7편이라 top-3 검색이 대부분의 기록을 가져와 차이가 드러나기 어렵고, "
-           "무료 호출 한도를 ①② 반복에 쓰기 위해 이번에는 하지 않았다(2026-11-08). 기록이 많은 장기 데이터에서 비교할 계획이다.", ""]
+           "- 문항별 검색 vs 일괄 검색: 주당 기록이 7편이라 top-3 검색이 대부분의 기록을 가져와 차이가 드러나기 어렵고, "
+           "무료 호출 한도를 반복 실행에 쓰기 위해 이번에는 하지 않았다(2026-11-08). 기록이 많은 장기 데이터에서 비교할 계획이다.",
+           "- 문항 조건부 캡셔닝 검증: 캡션 프롬프트에 문항 풀을 넣는 방식이 문항과 관련된 행동을 더 잘 드러내는지 일반 캡셔닝과 비교.",
+           "- 채팅 질문 재작성: '요즘 걷는 건 어때?'처럼 짧은 질문이 관련 기록을 못 찾은 사례가 있어, 검색 전에 질문을 행동 단어로 풀어 쓰는 단계.", ""]
     pd.DataFrame(rows).to_csv(RESULTS / "exp_b_summary.csv", index=False, encoding="utf-8-sig")
     return "\n".join(md)
 
@@ -186,7 +241,8 @@ def figures(runs: pd.DataFrame) -> None:
     out = RESULTS / "figures"
     out.mkdir(parents=True, exist_ok=True)
     shown = MAIN + ["정확 일치"]
-    for number, (title, conds) in enumerate(EXPERIMENTS.items(), 1):
+    for title, conds in EXPERIMENTS.items():
+        number = "345"[list(EXPERIMENTS).index(title)]
         sub = runs[runs["condition"].isin(conds)]
         if sub["condition"].nunique() < 2:
             continue
@@ -317,7 +373,9 @@ def main() -> None:
     runs.to_csv(RESULTS / "exp_b_runs.csv", index=False, encoding="utf-8-sig")
     (RESULTS / "tables.md").write_text(summary_tables(runs), encoding="utf-8")
     by_case(results, gold).to_csv(RESULTS / "exp_b_by_case.csv", index=False, encoding="utf-8-sig")
-    figures(runs)
+    for old in (RESULTS / "figures").glob("exp_b_*.png"):
+        old.unlink()
+    figures(runs[runs["week"].isin(MAIN_WEEKS)])
     (RESULTS / "examples").mkdir(exist_ok=True)
     (RESULTS / "examples" / "cases.md").write_text(cases(results, gold), encoding="utf-8")
     demo_md()

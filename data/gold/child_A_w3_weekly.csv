@@ -1,0 +1,49 @@
+week,item_id,gold_score_or_abstain,evidence_diaries,case,note
+3,18-19_gross_motor_01,abstain,,no_evidence,
+3,18-19_gross_motor_02,3,A_d20,parent,소파 위로 기어 올라감
+3,18-19_gross_motor_03,3,A_d17,parent,뒷걸음질
+3,18-19_gross_motor_04,2,A_d21,caption_only,"어른 손을 잡고 한 칸씩(난간 대신 손, 1주차와 같은 기준)"
+3,18-19_gross_motor_05,abstain,,no_evidence,
+3,18-19_gross_motor_06,3,A_d19,ambiguous_time,쪼그린 자세에서 붙잡지 않고 일어섬. '어제'
+3,18-19_gross_motor_07,abstain,,no_evidence,
+3,18-19_gross_motor_08,abstain,,no_evidence,
+3,18-19_fine_motor_01,abstain,,no_evidence,
+3,18-19_fine_motor_02,3,A_d17,parent,종이에 이리저리 선을 그음
+3,18-19_fine_motor_03,abstain,,no_evidence,
+3,18-19_fine_motor_04,3,A_d18,caption_only,플랩을 열고 책장을 넘김(캡션)
+3,18-19_fine_motor_05,3,A_d16,both,숟가락으로 떠서 입에 가져감
+3,18-19_fine_motor_06,abstain,,no_evidence,
+3,18-19_fine_motor_07,abstain,,no_evidence,
+3,18-19_fine_motor_08,3,A_d15,parent,블록 두 개를 나란히 줄 세움
+3,18-19_cognition_01,abstain,,no_evidence,
+3,18-19_cognition_02,abstain,,no_evidence,
+3,18-19_cognition_03,3,A_d17,parent,말로만 지시해 다른 방에서 기저귀를 가져옴
+3,18-19_cognition_04,3,A_d18,parent,눈 가리키기
+3,18-19_cognition_05,abstain,,no_evidence,
+3,18-19_cognition_06,abstain,,no_evidence,
+3,18-19_cognition_07,3,A_d21,parent,동물 그림과 소리 연결
+3,18-19_cognition_08,abstain,,no_evidence,
+3,18-19_language_01,abstain,,no_evidence,
+3,18-19_language_02,abstain,,no_evidence,
+3,18-19_language_03,3,A_d20,caption_only,이름을 들은 그림 카드를 가리킴(캡션)
+3,18-19_language_04,3,A_d15,caption_only,이름을 들으면 동물 자석을 가리킴(캡션)
+3,18-19_language_05,abstain,,no_evidence,
+3,18-19_language_06,2,A_d18,parent,'신'처럼 일부만 말함
+3,18-19_language_07,abstain,,no_evidence,
+3,18-19_language_08,abstain,,no_evidence,
+3,18-19_social_01,abstain,,no_evidence,
+3,18-19_social_02,abstain,,no_evidence,
+3,18-19_social_03,3,A_d15,parent,전화 속 아빠 목소리를 알아봄
+3,18-19_social_04,abstain,,no_evidence,
+3,18-19_social_05,abstain,,no_evidence,
+3,18-19_social_06,3,A_d16,parent,아파하는 엄마에게 '호' 불어 줌
+3,18-19_social_07,3,A_d21,parent,휴지로 닦기 지시를 따름
+3,18-19_social_08,3,A_d20,parent,사람들 앞에서 율동
+3,18-19_self_care_01,3,A_d16,caption_only,컵을 들어 물을 마심(캡션)
+3,18-19_self_care_02,abstain,,no_evidence,
+3,18-19_self_care_03,abstain,,no_evidence,
+3,18-19_self_care_04,abstain,,no_evidence,
+3,18-19_self_care_05,3,A_d16,both,숟가락 사용(캡션: 보호자가 반찬을 올려 주기도 함)
+3,18-19_self_care_06,3,A_d19,parent,모자를 혼자 벗고 다시 씀
+3,18-19_self_care_07,abstain,,no_evidence,
+3,18-19_self_care_08,3,A_d19,parent,수건으로 손의 물기를 닦음

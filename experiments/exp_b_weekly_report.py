@@ -31,6 +31,7 @@ def queue() -> list[tuple]:
     q += [("score", c, w, 0) for c in MODALITY for w in (1, 2)]
     q += [("score", "forced", w, 0) for w in (1, 2)]
     q += [("combined", "multi", 0, 0)]
+    q += [("score", c, 3, 0) for c in ("multi", "forced")]  # 3주차 촘촘한 기록(2026-11-10)
     q += [("chat", "multi", n, 0) for n in range(len(pipeline.CHAT_QUESTIONS))] + [("counsel", "multi", 0, 0)]
     for group in (["multi", "single", "no_date", "forced"], ["none"], ["no_source", "no_abstain"]):
         for rep in (1, 2):
